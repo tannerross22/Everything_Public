@@ -1,0 +1,1 @@
+g2="https://github.com/AdvancedPhotonSource/GSAS-II-buildtools/releases/download/v1.0.1/gsas2full-Latest-<platform>"

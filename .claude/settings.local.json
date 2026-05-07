@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cp \"/c/Users/Tanner/Documents/VScode/atmdata.csv\" \"/c/Users/Tanner/PycharmProjects/pythonProject1/rocket-flight-model/\")",
+      "Bash(cp \"/c/Users/Tanner/Documents/VScode/thrust.csv\" \"/c/Users/Tanner/PycharmProjects/pythonProject1/rocket-flight-model/\")",
+      "Bash(cp \"/c/Users/Tanner/Documents/VScode/RASaero.csv\" \"/c/Users/Tanner/PycharmProjects/pythonProject1/rocket-flight-model/\")",
+      "Bash(grep -E \"\\\\.\\(py|csv\\)$\")",
+      "Bash(grep -E \"\\\\.py$\")",
+      "Bash(grep -E \"\\\\.\\(py|csv\\)$|^d\")",
+      "Bash(mv pythonProject1/material-testing/* capstone/material-testing/)",
+      "Bash(mv pythonProject2/* capstone/diffusion-analysis/)",
+      "Bash(xargs -n1 basename)"
+    ]
+  }
+}
