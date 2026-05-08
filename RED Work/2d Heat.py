@@ -18,7 +18,7 @@ from scipy.sparse import lil_matrix, diags
 from scipy.sparse.linalg import spsolve
 
 # ============================================================
-# TUNABLE PARAMETERS
+# TUNABLE PARAMETERS    
 # ============================================================
 
 # --- Domain geometry (rectangular, split into two material regions) ---

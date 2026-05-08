@@ -2,26 +2,21 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
 # Load the datasets from a CSV file
-df = pd.read_csv('Plotting.csv')
+df = pd.read_csv('../Eutectic_temp.csv')
 plt.rcParams['font.family'] = 'Calibri'
 # Extract x1, y1 and x2, y2 from the dataframe
-x1 = df['Engineering Strain 1']
-y1 = df['Engineering Stress 1 (MPa)']
-x2 = df['Engineering Strain 2']
-y2 = df['Engineering Stress 2 (MPa)']
+x1 = df['Time']
+y1 = df['Temp']
 
 # Create the plot
 plt.figure(figsize=(10, 6))
 
 # Plot the first dataset with black dots
-plt.plot(x1, y1, color='black', linestyle='-', label="1020 HR steel")
-
-# Plot the second dataset with black triangles
-plt.plot(x2, y2, color='black', linestyle='dashed', label="980 Steel")
+plt.plot(x1, y1, color='black', linestyle='-', label="33% Cu")
 
 # Set x and y axis labels
-plt.xlabel('Engineering Strain',fontsize = 24, fontweight='bold')
-plt.ylabel('Engineering Stress (MPa)',fontsize = 24, fontweight='bold')
+plt.xlabel('Time (s)',fontsize = 24, fontweight='bold')
+plt.ylabel('Temperature (C°)',fontsize = 24, fontweight='bold')
 
 # Remove the title and gridlines
 plt.title('')  # No title
@@ -29,7 +24,7 @@ plt.grid(False)  # No grid
 
 # Set the ticks to be on the outside of the plot box
 plt.tick_params(direction='out',labelsize=22, width = 2)
-ticks = [0.0,0.1,0.2,0.3,0.4]
+ticks = [0,100,200,300,400]
 plt.xticks(ticks)
 # Ensure that the bottom of the y-axis starts at exactly 0
 plt.ylim(bottom=0)
