@@ -1,6 +1,8 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
+
+#Extreme physical constraints
 # Physical constants
 hbar = 1.055e-34      # J·s
 amu = 1.6605e-27      # kg
