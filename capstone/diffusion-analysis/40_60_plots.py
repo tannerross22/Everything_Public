@@ -8,7 +8,7 @@ def parse_sections(filename):
         for line in f:
             line = line.strip()
 
-            # Detect section header
+            # Detect section header like: 1,Time,Displacement,Force,...
             if line and line[0].isdigit() and ",Time," in line:
                 current_section = int(line.split(",")[0])
                 sections[current_section] = {
@@ -17,9 +17,11 @@ def parse_sections(filename):
                 }
                 continue
 
+            # Skip if not inside a section
             if current_section is None:
                 continue
 
+            # Data rows start with ""
             if line.startswith('"",'):
                 parts = line.replace('"', "").split(",")
 
@@ -39,28 +41,23 @@ def parse_sections(filename):
 # MAIN
 # ==========================
 
-filename = "40_60_1.csv"
+filename = "40_60_line.csv"   # <-- change this
+
 sections = parse_sections(filename)
 
-plt.figure(figsize=(10, 6))
+plt.figure(figsize=(8, 6))
 
-displacement_offset = 0.0
-
-for sec in sorted(sections.keys()):
-    disp = sections[sec]["displacement"]
-    force = sections[sec]["force"]
-
-    # Apply cumulative offset
-    disp_continuous = [d + displacement_offset for d in disp]
-
-    plt.plot(disp_continuous, force, label=f"Section {sec}")
-
-    # Update offset to last displacement of this section
-    displacement_offset = disp_continuous[-1]
+for sec, data in sections.items():
+    plt.plot(
+        data["displacement"],
+        data["force"],
+        label=f"Section {sec}"
+    )
 
 plt.xlabel("Displacement (mm)")
 plt.ylabel("Force (N)")
+plt.title("Flexure Test – Reload Sections After Sample Removal")
 plt.legend()
-plt.grid(False)
+plt.grid(True)
 plt.tight_layout()
 plt.show()
