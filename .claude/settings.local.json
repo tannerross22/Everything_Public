@@ -11,7 +11,9 @@
       "Bash(mv pythonProject2/* capstone/diffusion-analysis/)",
       "Bash(xargs -n1 basename)",
       "Bash(python -c \"import yfinance, pandas, matplotlib; print\\('All dependencies OK'\\)\")",
-      "Bash(pip install *)"
+      "Bash(pip install *)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\Tanner\\\\Documents\\\\Python Projects\\\\5DOF_Flight\" -Force)",
+      "Bash(Select-Object Name, PSIsContainer)"
     ]
   }
 }

@@ -39,16 +39,18 @@ class Environment(PresetObject):
         self._atmospheric_path = "airQuantities.csv"
         self.previous_air_density_index = 0
 
-        self.apply_wind = True
+        self.apply_wind = False
 
         super().overwrite_defaults(**kwargs)
 
         self.load_atmospheric_data()
 
-        
-        self.wind = Wind()
-        # It is a little weird to override a default by default, but whatever
-        self.wind.get_average_speed_altitude = speed_at_altitude
+        if self.apply_wind:
+            self.wind = Wind()
+            # It is a little weird to override a default by default, but whatever
+            self.wind.get_average_speed_altitude = speed_at_altitude
+        else:
+            self.wind = None
 
     @property
     def atmospheric_path(self):
@@ -61,7 +63,7 @@ class Environment(PresetObject):
 
     def load_atmospheric_data(self):
         self.atmospheric_data = pd.read_csv(f"{atmosphere_path}/{self._atmospheric_path}")
-        self.atmospheric_data.drop(
+        self.atmospheric_data = self.atmospheric_data.drop(
             columns=["Viscosity", "Temperature"])
 
     def simulate_step(self):
@@ -105,7 +107,9 @@ class Environment(PresetObject):
 
         # I believe that Lake Jackson average windspeed is about 2.1 m/s
         # https://globalwindatlas.info/ also has some direction data
-        return self.wind.get_air_velocity(self.simulation.time, altitude)
+        # Default to t=0 if no simulation has been attached yet (e.g. during construction-time cache calls)
+        sim_time = getattr(getattr(self, "simulation", None), "time", 0)
+        return self.wind.get_air_velocity(sim_time, altitude)
 
 
     def get_speed_of_sound(self, altitude):

@@ -445,10 +445,15 @@ class Rocket(MassObject):
 
                 self.apply_force(drag_magnitude, drag_direction)
             else:
-                self.apply_force(drag_magnitude, drag_direction)
+                # Apply aerodynamic forces at the center of pressure (CP), not the CG.
+                # Without this, the CP-CG moment arm is zero and no aero torque is ever
+                # generated, so the rocket cannot weathercock or stabilize.
+                self.apply_force(drag_magnitude, drag_direction,
+                                 distance_from_nose=self.CP)
 
                 if self.apply_angular_forces:
-                    self.apply_force(lift_magnitude, lift_direction)
+                    self.apply_force(lift_magnitude, lift_direction,
+                                     distance_from_nose=self.CP)
 
             self.drag = drag_magnitude * drag_direction
             self.lift = lift_magnitude * lift_direction

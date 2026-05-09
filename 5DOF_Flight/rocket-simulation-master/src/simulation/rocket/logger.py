@@ -14,7 +14,7 @@ class RocketLogger(FeedbackLogger):
         super().__init__(simulation)
 
         # Don't want to override the ones added in super()
-        self.features.union(base_features)
+        self.features.update(base_features)
 
 
         self.debug_every = 20 # seconds

@@ -66,7 +66,7 @@ class Motor(MassObject):
         
         if dataframe.iloc[0]["time"] != 0:
             print("Passed motor thrust data has no zero time data point, it is added automatically")
-            dataframe.iloc[0]["time"] = 0
+            dataframe.loc[dataframe.index[0], "time"] = 0
 
         self.thrust_curve = None
         self.thrust_data = dataframe
