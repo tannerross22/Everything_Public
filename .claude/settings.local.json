@@ -9,7 +9,9 @@
       "Bash(grep -E \"\\\\.\\(py|csv\\)$|^d\")",
       "Bash(mv pythonProject1/material-testing/* capstone/material-testing/)",
       "Bash(mv pythonProject2/* capstone/diffusion-analysis/)",
-      "Bash(xargs -n1 basename)"
+      "Bash(xargs -n1 basename)",
+      "Bash(python -c \"import yfinance, pandas, matplotlib; print\\('All dependencies OK'\\)\")",
+      "Bash(pip install *)"
     ]
   }
 }

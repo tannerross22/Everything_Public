@@ -71,11 +71,12 @@ def evalSpline(xData, yData, k, x):
 
 xData = np.array([0,21.1,37.8,54.4,71.1,87.8,100])
 yData = np.array([0.00179, 0.00113, 0.000696,0.000519,0.000338,0.000321, 0.000269])
-
+spline_interp = []
 k = curvatures(xData,yData)
 for i in Eval:
     mu = evalSpline(xData,yData,k,i)
     print(f'Cubic Spline at {i} C = {mu} m^2/s')
+    spline_interp.append(mu)
 
 # --- Gauss Elimination ---
 def gaussElimin(a, b):
@@ -143,47 +144,84 @@ def evalSpline(xData, yData, k, x):
     return y
 
 # --- Regression ---
-def quadratic_regression(xData, yData, xEval):
-    n = len(xData)
-    s0 = float(n)
-    s1 = sum(xData);       s2 = sum(x**2 for x in xData)
-    s3 = sum(x**3 for x in xData); s4 = sum(x**4 for x in xData)
-    r0 = sum(yData)
-    r1 = sum(xData[i]*yData[i] for i in range(n))
-    r2 = sum(xData[i]**2*yData[i] for i in range(n))
-    A = np.array([[s0,s1,s2],[s1,s2,s3],[s2,s3,s4]], dtype=float)
-    r = np.array([r0,r1,r2], dtype=float)
-    c = gaussElimin(A, r)
-    return [float(c[0] + c[1]*x + c[2]*x**2) for x in xEval]
 
-def cubic_regression(xData, yData, xEval):
-    n = len(xData)
-    s0 = float(n)
-    s1 = sum(xData);       s2 = sum(x**2 for x in xData)
-    s3 = sum(x**3 for x in xData); s4 = sum(x**4 for x in xData)
-    s5 = sum(x**5 for x in xData); s6 = sum(x**6 for x in xData)
-    r0 = sum(yData)
-    r1 = sum(xData[i]*yData[i] for i in range(n))
-    r2 = sum(xData[i]**2*yData[i] for i in range(n))
-    r3 = sum(xData[i]**3*yData[i] for i in range(n))
-    A = np.array([[s0,s1,s2,s3],[s1,s2,s3,s4],[s2,s3,s4,s5],[s3,s4,s5,s6]], dtype=float)
-    r = np.array([r0,r1,r2,r3], dtype=float)
-    c = gaussElimin(A, r)
-    return [float(c[0] + c[1]*x + c[2]*x**2 + c[3]*x**3) for x in xEval]
+# Quadratic regression
+def quadReg(x, y):
+    n = len(x)
 
-# --- Run ---
-k = curvatures(xData, yData)
-quad = quadratic_regression(xData, yData, Eval)
-cub  = cubic_regression(xData, yData, Eval)
+    # Build A matrix
+    A = np.zeros((n, 3))
+    for i in range(n):
+        A[i, 0] = 1
+        A[i, 1] = x[i]
+        A[i, 2] = x[i] ** 2
 
-print("Viscosity Interpolation Results\n" + "-"*45)
-for i, x in enumerate(Eval):
-    spline = evalSpline(xData, yData, k, x)
-    print(f"Cubic Spline      at {x:3d} C = {spline:.10f} m^2/s")
-    print(f"Quadratic Reg.    at {x:3d} C = {quad[i]:.10f} m^2/s")
-    print(f"Cubic Reg.        at {x:3d} C = {cub[i]:.10f} m^2/s")
-    print(f"Spline - Cubic    at {x:3d} C = {spline - cub[i]:.10f} m^2/s")
-    print()
+    # Build normal equations
+    AT = A.T
+    ATA = AT @ A
+    ATy = AT @ y
+
+    # Solve for coefficients
+    coeffs = gaussElimin(ATA, ATy)
+    return coeffs  # [a0, a1, a2]
+
+
+# Cubic regression
+def cubicReg(x, y):
+    n = len(x)
+
+    # Build A matrix
+    A = np.zeros((n, 4))
+    for i in range(n):
+        A[i, 0] = 1
+        A[i, 1] = x[i]
+        A[i, 2] = x[i] ** 2
+        A[i, 3] = x[i] ** 3
+
+    # Normal equations
+    AT = A.T
+    ATA = AT @ A
+    ATy = AT @ y
+
+    # Solve
+    coeffs = gaussElimin(ATA, ATy)
+    return coeffs  # [a0, a1, a2, a3]
+
+import numpy as np
+
+def evalQuad(coeffs, x_vals):
+    # coeffs = [a0, a1, a2]
+    y_vals = np.zeros(len(x_vals))
+    for i in range(len(x_vals)):
+        x = x_vals[i]
+        y_vals[i] = coeffs[0] + coeffs[1]*x + coeffs[2]*x**2
+    return y_vals
+
+
+def evalCubic(coeffs, x_vals):
+    # coeffs = [a0, a1, a2, a3]
+    y_vals = np.zeros(len(x_vals))
+    for i in range(len(x_vals)):
+        x = x_vals[i]
+        y_vals[i] = (coeffs[0] + coeffs[1]*x +
+                     coeffs[2]*x**2 + coeffs[3]*x**3)
+    return y_vals
+
+quad_co = quadReg(xData,yData)
+cubic_co = cubicReg(xData,yData)
+y_quad = evalQuad(quad_co, Eval)
+y_cubic = evalCubic(cubic_co, Eval)
+
+for i in range(len(Eval)):
+   print(f'Quadratic Regression mu at {Eval[i]} C = {y_quad[i]} m^2/s')
+
+diff = []
+for i in range(len(Eval)):
+    print(f'Cubic Regression mu at {Eval[i]} C = {y_cubic[i]} m^2/s')
+
+for i in range(len(Eval)):
+    diff.append(spline_interp[i] - y_cubic[i])
+    print(f'Cubic Spline - Cubic Regression = {diff[i]} m^2/s)')
 
 
 
