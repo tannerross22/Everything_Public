@@ -1,0 +1,22 @@
+[tool.poetry]
+name = "mathmodels"
+version = "0.1.0"
+description = "5DOF rocket flight simulation and analysis"
+authors = ["Brazoswood Goddard Program"]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+numpy = "^1.24.0"
+pandas = "^2.0.0"
+scipy = "^1.11.0"
+matplotlib = "^3.8.0"
+lmfit = "^1.2.0"
+pygame = "^2.5.0"
+jpype1 = "^1.5.0"  # For OpenRocket integration (optional but included)
+noise = "^1.2.2"  # For wind simulation (Perlin noise)
+
+[tool.poetry.dev-dependencies]
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
