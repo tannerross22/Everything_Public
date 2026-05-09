@@ -13,7 +13,9 @@
       "Bash(python -c \"import yfinance, pandas, matplotlib; print\\('All dependencies OK'\\)\")",
       "Bash(pip install *)",
       "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\Tanner\\\\Documents\\\\Python Projects\\\\5DOF_Flight\" -Force)",
-      "Bash(Select-Object Name, PSIsContainer)"
+      "Bash(Select-Object Name, PSIsContainer)",
+      "Bash(python collision_simulation.py)",
+      "Bash(python collision_animation.py)"
     ]
   }
 }
