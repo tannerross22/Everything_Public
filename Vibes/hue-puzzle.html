@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hue Puzzle</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: #0f0f1a;
+    color: #e0e0f0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    height: 100vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 12px 8px;
+    gap: 10px;
+  }
+
+  h1 {
+    font-size: 1.5rem;
+    font-weight: 300;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: #c0c0e0;
+  }
+
+  #ui-bar {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    font-size: 0.9rem;
+    color: #9090b0;
+  }
+
+  #level-display {
+    font-size: 1rem;
+    color: #d0d0f0;
+    font-weight: 500;
+  }
+
+  #shuffle-btn, #next-btn {
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.15);
+    color: #c0c0e0;
+    padding: 6px 16px;
+    border-radius: 20px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    letter-spacing: 0.05em;
+    transition: background 0.15s, border-color 0.15s;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  #shuffle-btn:hover, #next-btn:hover {
+    background: rgba(255,255,255,0.15);
+    border-color: rgba(255,255,255,0.3);
+  }
+
+  #hint-text {
+    font-size: 0.78rem;
+    color: #606080;
+    text-align: center;
+    letter-spacing: 0.03em;
+  }
+
+  #board-container {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+  }
+
+  #board {
+    display: grid;
+    gap: 3px;
+    padding: 4px;
+    background: #12121f;
+    border-radius: 10px;
+    border: 1px solid rgba(255,255,255,0.06);
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  @keyframes win-flash {
+    0%   { filter: brightness(1) saturate(1); }
+    20%  { filter: brightness(1.4) saturate(1.3); }
+    50%  { filter: brightness(0.85) saturate(0.9); }
+    75%  { filter: brightness(1.3) saturate(1.2); }
+    100% { filter: brightness(1) saturate(1); }
+  }
+
+  #board.win-flash {
+    animation: win-flash 0.85s ease-in-out forwards;
+  }
+
+  .tile {
+    width: var(--tile-size);
+    height: var(--tile-size);
+    border-radius: 5px;
+    cursor: pointer;
+    transition: transform 0.07s ease, outline-color 0.07s ease;
+    outline: 2px solid transparent;
+    outline-offset: -2px;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+
+  .tile:hover:not(.corner) {
+    transform: scale(0.95);
+    outline-color: rgba(255,255,255,0.4);
+  }
+
+  .tile.selected {
+    outline: 3px solid white !important;
+    outline-offset: -3px;
+    transform: scale(0.88);
+    z-index: 10;
+    position: relative;
+  }
+
+  .tile.corner {
+    cursor: default;
+    outline: 2px solid rgba(255,255,255,0.3);
+    outline-offset: -2px;
+  }
+
+  .tile.corner:hover {
+    transform: none;
+    outline-color: rgba(255,255,255,0.3);
+  }
+
+  #win-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    backdrop-filter: blur(4px);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+  }
+
+  #win-overlay.visible {
+    pointer-events: auto;
+    opacity: 1;
+  }
+
+  #win-card {
+    background: #1a1a2e;
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 16px;
+    padding: 36px 48px;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+    box-shadow: 0 8px 40px rgba(0,0,0,0.6);
+  }
+
+  #win-card h2 {
+    font-size: 2rem;
+    font-weight: 300;
+    letter-spacing: 0.15em;
+    color: #f0f0ff;
+  }
+
+  #win-card p {
+    color: #9090b0;
+    font-size: 0.95rem;
+  }
+
+  #win-card .win-detail {
+    font-size: 1.1rem;
+    color: #c0c0e0;
+    font-weight: 500;
+  }
+
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+
+<h1>Hue Puzzle</h1>
+
+<div id="ui-bar">
+  <span id="level-display">Level 1</span>
+  <span id="moves-display">Moves: 0</span>
+  <button id="shuffle-btn">Shuffle</button>
+</div>
+
+<div id="hint-text">Click two tiles to swap them. Restore the gradient.</div>
+
+<div id="board-container">
+  <div id="board"></div>
+</div>
+
+<div id="win-overlay">
+  <div id="win-card">
+    <h2>Solved!</h2>
+    <p>Level <span id="win-level"></span> complete</p>
+    <p class="win-detail"><span id="win-moves"></span> moves</p>
+    <button id="next-btn">Next Level &rarr;</button>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+// ─── State ───────────────────────────────────────────────────────────────────
+
+const state = {
+  cols: 7,
+  rows: 10,
+  correctColors: [],  // [{r,g,b}] indexed by board position
+  tiles: [],          // tiles[boardPos] = colorIndex (identity = solved)
+  corners: [],        // locked board indices [TL, TR, BL, BR]
+  selected: null,
+  level: 1,
+  moves: 0,
+};
+
+const dom = {};
+
+// ─── Color Math ──────────────────────────────────────────────────────────────
+
+function hslToRgb(h, s, l) {
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const x = c * (1 - Math.abs((h / 60) % 2 - 1));
+  const m = l - c / 2;
+  let r = 0, g = 0, b = 0;
+  if      (h < 60)  { r = c; g = x; b = 0; }
+  else if (h < 120) { r = x; g = c; b = 0; }
+  else if (h < 180) { r = 0; g = c; b = x; }
+  else if (h < 240) { r = 0; g = x; b = c; }
+  else if (h < 300) { r = x; g = 0; b = c; }
+  else              { r = c; g = 0; b = x; }
+  return { r: (r + m) * 255, g: (g + m) * 255, b: (b + m) * 255 };
+}
+
+function hueDist(a, b) {
+  const d = Math.abs(a - b) % 360;
+  return d > 180 ? 360 - d : d;
+}
+
+function lerpColor(a, b, t) {
+  return {
+    r: a.r + (b.r - a.r) * t,
+    g: a.g + (b.g - a.g) * t,
+    b: a.b + (b.b - a.b) * t,
+  };
+}
+
+function pickCornerColors(minHueDist = 72) {
+  const MAX_TRIES = 1000;
+  const hues = [];
+
+  for (let i = 0; i < 4; i++) {
+    let tries = 0, h;
+    do {
+      h = Math.random() * 360;
+      tries++;
+    } while (tries < MAX_TRIES && hues.some(e => hueDist(h, e) < minHueDist));
+
+    // Fallback to evenly-spaced if we couldn't find a valid hue
+    if (tries >= MAX_TRIES) {
+      h = (i * 90 + Math.random() * 20) % 360;
+    }
+    hues.push(h);
+  }
+
+  return hues.map(h => hslToRgb(h, 0.70 + Math.random() * 0.20, 0.40 + Math.random() * 0.25));
+}
+
+function buildCorrectColors(cols, rows, TL, TR, BL, BR) {
+  const out = [];
+  for (let y = 0; y < rows; y++) {
+    const ty = rows > 1 ? y / (rows - 1) : 0;
+    for (let x = 0; x < cols; x++) {
+      const tx = cols > 1 ? x / (cols - 1) : 0;
+      out.push(lerpColor(lerpColor(TL, TR, tx), lerpColor(BL, BR, tx), ty));
+    }
+  }
+  return out;
+}
+
+// ─── Board Logic ─────────────────────────────────────────────────────────────
+
+function buildCorners(cols, rows) {
+  return [0, cols - 1, (rows - 1) * cols, rows * cols - 1];
+}
+
+function shuffleTiles() {
+  const movable = state.tiles
+    .map((_, i) => i)
+    .filter(i => !state.corners.includes(i));
+
+  // Fisher-Yates on movable indices
+  for (let i = movable.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [state.tiles[movable[i]], state.tiles[movable[j]]] =
+    [state.tiles[movable[j]], state.tiles[movable[i]]];
+  }
+
+  // Guard: re-shuffle if already solved (rare but possible on small boards)
+  if (checkWin()) shuffleTiles();
+}
+
+const WIN_TOLERANCE = 8;
+
+function checkWin() {
+  for (let i = 0; i < state.tiles.length; i++) {
+    if (state.corners.includes(i)) continue;
+    const correct = state.correctColors[i];
+    const actual  = state.correctColors[state.tiles[i]];
+    if (
+      Math.abs(correct.r - actual.r) > WIN_TOLERANCE ||
+      Math.abs(correct.g - actual.g) > WIN_TOLERANCE ||
+      Math.abs(correct.b - actual.b) > WIN_TOLERANCE
+    ) return false;
+  }
+  return true;
+}
+
+// ─── Rendering ───────────────────────────────────────────────────────────────
+
+function rgbStr({ r, g, b }) {
+  return `rgb(${Math.round(r)},${Math.round(g)},${Math.round(b)})`;
+}
+
+function applyTileColor(el, boardIndex) {
+  el.style.backgroundColor = rgbStr(state.correctColors[state.tiles[boardIndex]]);
+}
+
+function computeTileSize() {
+  const gap = 3, pad = 8;
+  const availH = window.innerHeight - 130;
+  const availW = Math.min(window.innerWidth * 0.96, 480);
+  const byH = Math.floor((availH - pad - gap * (state.rows - 1)) / state.rows);
+  const byW = Math.floor((availW - pad - gap * (state.cols - 1)) / state.cols);
+  return Math.max(20, Math.min(byH, byW));
+}
+
+function renderBoard() {
+  const tileSize = computeTileSize();
+  dom.board.style.setProperty('--tile-size', tileSize + 'px');
+  dom.board.style.gridTemplateColumns = `repeat(${state.cols}, ${tileSize}px)`;
+  dom.board.innerHTML = '';
+  dom.tileEls = [];
+
+  const N = state.cols * state.rows;
+  for (let i = 0; i < N; i++) {
+    const el = document.createElement('div');
+    el.className = 'tile';
+    el.dataset.index = i;
+
+    if (state.corners.includes(i)) el.classList.add('corner');
+
+    applyTileColor(el, i);
+
+    el.addEventListener('click', onTileClick);
+    el.addEventListener('touchstart', onTouchStart, { passive: false });
+    el.addEventListener('touchend', onTouchEnd, { passive: false });
+
+    dom.board.appendChild(el);
+    dom.tileEls.push(el);
+  }
+}
+
+// ─── Interaction ─────────────────────────────────────────────────────────────
+
+let touchStartIndex = null;
+
+function onTouchStart(e) {
+  touchStartIndex = parseInt(e.currentTarget.dataset.index, 10);
+}
+
+function onTouchEnd(e) {
+  e.preventDefault(); // suppress ghost click
+  const endIndex = parseInt(e.currentTarget.dataset.index, 10);
+  if (touchStartIndex === endIndex) {
+    handleTileActivate(endIndex);
+  }
+  touchStartIndex = null;
+}
+
+function onTileClick(e) {
+  // Only fires on non-touch devices (touch events call preventDefault)
+  const i = parseInt(e.currentTarget.dataset.index, 10);
+  handleTileActivate(i);
+}
+
+function handleTileActivate(i) {
+  if (state.corners.includes(i)) return;
+
+  if (state.selected === null) {
+    state.selected = i;
+    dom.tileEls[i].classList.add('selected');
+  } else if (state.selected === i) {
+    dom.tileEls[i].classList.remove('selected');
+    state.selected = null;
+  } else {
+    const a = state.selected;
+    const b = i;
+
+    dom.tileEls[a].classList.remove('selected');
+    state.selected = null;
+
+    [state.tiles[a], state.tiles[b]] = [state.tiles[b], state.tiles[a]];
+    state.moves++;
+
+    applyTileColor(dom.tileEls[a], a);
+    applyTileColor(dom.tileEls[b], b);
+
+    updateUI();
+
+    if (checkWin()) onWin();
+  }
+}
+
+// ─── UI Updates ──────────────────────────────────────────────────────────────
+
+function updateUI() {
+  dom.levelDisplay.textContent = `Level ${state.level}`;
+  dom.movesDisplay.textContent = `Moves: ${state.moves}`;
+}
+
+// ─── Win / Level Flow ────────────────────────────────────────────────────────
+
+function onWin() {
+  dom.board.classList.add('win-flash');
+  setTimeout(() => {
+    dom.board.classList.remove('win-flash');
+    dom.winLevel.textContent = state.level;
+    dom.winMoves.textContent = state.moves;
+    dom.winOverlay.classList.add('visible');
+  }, 900);
+}
+
+function onNextLevel() {
+  dom.winOverlay.classList.remove('visible');
+  state.level++;
+  initLevel();
+}
+
+function onShuffle() {
+  if (state.selected !== null) {
+    dom.tileEls[state.selected].classList.remove('selected');
+    state.selected = null;
+  }
+  shuffleTiles();
+  state.moves = 0;
+  dom.tileEls.forEach((el, i) => applyTileColor(el, i));
+  updateUI();
+}
+
+// ─── Level Init ──────────────────────────────────────────────────────────────
+
+function initLevel() {
+  const sizes = [[4, 5], [5, 6], [5, 7], [6, 7]];
+  const [cols, rows] = sizes[Math.floor(Math.random() * sizes.length)];
+  state.cols = cols;
+  state.rows = rows;
+
+  const [TL, TR, BL, BR] = pickCornerColors();
+  state.correctColors = buildCorrectColors(cols, rows, TL, TR, BL, BR);
+  state.corners = buildCorners(cols, rows);
+
+  const N = cols * rows;
+  state.tiles = Array.from({ length: N }, (_, i) => i);
+
+  shuffleTiles();
+
+  state.selected = null;
+  state.moves = 0;
+
+  renderBoard();
+  updateUI();
+}
+
+// ─── Bootstrap ───────────────────────────────────────────────────────────────
+
+document.addEventListener('DOMContentLoaded', () => {
+  dom.board        = document.getElementById('board');
+  dom.levelDisplay = document.getElementById('level-display');
+  dom.movesDisplay = document.getElementById('moves-display');
+  dom.shuffleBtn   = document.getElementById('shuffle-btn');
+  dom.winOverlay   = document.getElementById('win-overlay');
+  dom.winLevel     = document.getElementById('win-level');
+  dom.winMoves     = document.getElementById('win-moves');
+  dom.nextBtn      = document.getElementById('next-btn');
+
+  dom.shuffleBtn.addEventListener('click', onShuffle);
+  dom.nextBtn.addEventListener('click', onNextLevel);
+
+  initLevel();
+});
+</script>
+</body>
+</html>

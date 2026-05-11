@@ -14,7 +14,7 @@ csv_files = [
     "S8 - raw.csv",
 ]
 
-fe_powder_baseline = 0.035  # nominal Fe in powder at zero dilution — adjust as needed
+fe_powder_baseline = 0.0305  # nominal Fe in powder at zero dilution — adjust as needed
 integration_cap = 100      # µm from interface to integrate over
 num_start_points = 1
 num_end_points = 5
