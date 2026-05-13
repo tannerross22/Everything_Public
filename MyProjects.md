@@ -2,4 +2,4 @@
 
 - [[Noted App]] - this app!
 - [[Ideas]] - brainstorming
-- [[Second Note]] - testing
+- [[18th Note]] - testing

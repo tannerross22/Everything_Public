@@ -2,4 +2,4 @@
 
 Hello from Milkdown!
 
-Check out my [[Second Note]] and my [[Ideas]] page.
+Check out my [[18th Note]] and my [[Ideas]] page.
