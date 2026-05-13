@@ -13,6 +13,7 @@ import {
   renameNote,
   createFolder,
   moveNote,
+  copyItem,
   isGitRepo,
   gitStatus,
   gitSync,
@@ -127,6 +128,13 @@ function registerIpcHandlers() {
 
   ipcMain.handle('vault:moveNote', (_event, oldPath: string, newFolderPath: string) => {
     return moveNote(oldPath, newFolderPath)
+  })
+
+  ipcMain.handle('vault:copyItem', (_event, sourcePath: string, destFolder: string) => {
+    isWriting = true
+    const result = copyItem(sourcePath, destFolder)
+    setTimeout(() => { isWriting = false }, 500)
+    return result
   })
 
   ipcMain.handle('vault:read', (_event, filePath: string) => {

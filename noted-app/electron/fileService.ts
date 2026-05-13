@@ -220,6 +220,35 @@ export function renameNote(vaultDir: string, oldPath: string, newName: string): 
   return { newPath, updatedCount }
 }
 
+// ── Copy operations ──
+
+/** Copy a file or folder into destFolder, auto-renaming on conflict. Returns new path. */
+export function copyItem(sourcePath: string, destFolder: string): string {
+  const basename = path.basename(sourcePath)
+  let destPath = path.join(destFolder, basename)
+
+  // Handle name conflicts by adding (copy), (copy 2), etc.
+  if (fs.existsSync(destPath)) {
+    const ext = path.extname(basename)
+    const nameNoExt = path.basename(basename, ext)
+    let i = 1
+    do {
+      const suffix = i === 1 ? ' (copy)' : ` (copy ${i})`
+      destPath = path.join(destFolder, `${nameNoExt}${suffix}${ext}`)
+      i++
+    } while (fs.existsSync(destPath))
+  }
+
+  const stat = fs.statSync(sourcePath)
+  if (stat.isDirectory()) {
+    fs.cpSync(sourcePath, destPath, { recursive: true })
+  } else {
+    fs.copyFileSync(sourcePath, destPath)
+  }
+
+  return destPath
+}
+
 // ── Git operations ──
 
 export function isGitRepo(vaultDir: string): Promise<boolean> {
@@ -241,7 +270,7 @@ export function gitStatus(vaultDir: string): Promise<string> {
 
 export function gitSync(vaultDir: string, message: string): Promise<string> {
   return new Promise((resolve, reject) => {
-    execFile('git', ['add', '-A', '--', ':(glob)**/*.md'], { cwd: vaultDir }, (err) => {
+    execFile('git', ['add', '-A'], { cwd: vaultDir }, (err) => {
       if (err) return reject(err)
       execFile('git', ['commit', '-m', message], { cwd: vaultDir }, (err2) => {
         if (err2) return reject(err2)

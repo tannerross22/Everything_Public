@@ -20,6 +20,7 @@ declare global {
       renameNote: (vaultDir: string, oldPath: string, newName: string) => Promise<{ newPath: string; updatedCount: number }>
       createFolder: (folderPath: string) => Promise<string>
       moveNote: (oldPath: string, newFolderPath: string) => Promise<string>
+      copyItem: (sourcePath: string, destFolder: string) => Promise<string>
 
       // File watcher events
       onFilesChanged: (callback: () => void) => () => void

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useVault } from './hooks/useVault'
 import { useGraph } from './hooks/useGraph'
 import Sidebar from './components/Sidebar'
@@ -10,6 +10,9 @@ import {
   assignFolderColor,
   isTopLevelFolder,
 } from './hooks/useFolderColors'
+import { loadSidebarState, saveSidebarState } from './utils/sidebarStorage'
+import TabBar, { type OpenTab } from './components/TabBar'
+import FindBar from './components/FindBar'
 
 type ViewMode = 'editor' | 'graph'
 
@@ -30,12 +33,31 @@ function App() {
     moveItem,
     resolveLink,
     refreshNotes,
+    clearActiveNote,
   } = useVault()
 
   const { nodes, links } = useGraph(notes, vaultDir)
   const [viewMode, setViewMode] = useState<ViewMode>('editor')
   const [searchVisible, setSearchVisible] = useState(false)
   const [folderColors, setFolderColors] = useState<Record<string, string>>(() => loadFolderColors())
+  const [promptVisible, setPromptVisible] = useState(false)
+  const [promptValue, setPromptValue] = useState('')
+  const [promptType, setPromptType] = useState<'note' | 'folder'>('note')
+  const [openTabs, setOpenTabs] = useState<OpenTab[]>([])
+  const [activeTabIndex, setActiveTabIndex] = useState(-1)
+  const [clipboardPath, setClipboardPath] = useState<string | null>(null)
+  const [findVisible, setFindVisible] = useState(false)
+  const editorContainerRef = useRef<HTMLDivElement>(null)
+
+  // Sidebar resizing and collapsing
+  const { width: savedWidth, collapsed: savedCollapsed } = loadSidebarState()
+  const [sidebarWidth, setSidebarWidth] = useState(savedWidth)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(savedCollapsed)
+  const [isResizing, setIsResizing] = useState(false)
+  const resizeRef = useRef<{ startX: number; startWidth: number; currentWidth: number } | null>(null)
+
+  // Whether a tab is selected (activeNote from useVault has the content)
+  const hasActiveTab = activeTabIndex >= 0 && activeTabIndex < openTabs.length
 
   // Auto-assign colors whenever the file tree changes (e.g. vault opened, folder created)
   useEffect(() => {
@@ -51,10 +73,84 @@ function App() {
     if (changed) setFolderColors(updated)
   }, [fileTree, vaultDir])
 
-  const handleGraphNodeClick = useCallback((noteId: string) => {
-    resolveLink(noteId)
+  // ── Tab operations ──
+  // Every note open — whether from sidebar click, right-click "Open in New Tab",
+  // search, or graph — goes through this so there's always a tab for it.
+  const openNoteInTab = useCallback(async (path: string) => {
+    // Close find bar when switching notes
+    setFindVisible(false)
+    // Load the note content first
+    await openNote(path)
+
+    // Derive name from the loaded notes list (may have just been refreshed)
+    const name = notes.find((n) => n.path === path)?.name
+      ?? path.split(/[/\\]/).pop()?.replace(/\.md$/i, '')
+      ?? 'Untitled'
+
+    setOpenTabs((prev) => {
+      const existingIndex = prev.findIndex((t) => t.path === path)
+      if (existingIndex >= 0) {
+        setActiveTabIndex(existingIndex)
+        return prev
+      }
+      const next = [...prev, { path, name }]
+      setActiveTabIndex(next.length - 1)
+      return next
+    })
+
     setViewMode('editor')
-  }, [resolveLink])
+  }, [notes, openNote])
+
+  const switchTab = useCallback((index: number) => {
+    if (index >= 0 && index < openTabs.length) {
+      setActiveTabIndex(index)
+      openNote(openTabs[index].path)
+    }
+  }, [openTabs, openNote])
+
+  const closeTab = useCallback((index: number) => {
+    const newTabs = openTabs.filter((_, i) => i !== index)
+    setOpenTabs(newTabs)
+
+    // Update active index
+    if (index === activeTabIndex) {
+      // Closing the active tab
+      if (newTabs.length === 0) {
+        setActiveTabIndex(-1)
+        clearActiveNote()
+      } else if (index >= newTabs.length) {
+        // Closed tab was at the end, switch to previous
+        setActiveTabIndex(newTabs.length - 1)
+        openNote(newTabs[newTabs.length - 1].path)
+      } else {
+        // Closed tab was in the middle, stay on same index (which is now the next tab)
+        setActiveTabIndex(index)
+        openNote(newTabs[index].path)
+      }
+    } else if (index < activeTabIndex) {
+      // Closing a tab before the active one, shift index left
+      setActiveTabIndex(activeTabIndex - 1)
+    }
+  }, [openTabs, activeTabIndex, openNote, clearActiveNote])
+
+  const createNoteInNewTab = useCallback(() => {
+    setPromptType('note')
+    setPromptValue('')
+    setPromptVisible(true)
+  }, [])
+
+  const createFolderFromPrompt = useCallback(() => {
+    setPromptType('folder')
+    setPromptValue('')
+    setPromptVisible(true)
+  }, [])
+
+  const handleGraphNodeClick = useCallback(async (noteId: string) => {
+    const notePath = await resolveLink(noteId)
+    if (notePath) {
+      await openNoteInTab(notePath)
+    }
+  }, [resolveLink, openNoteInTab])
 
   const handleCreateFolder = useCallback((fullPath: string) => {
     createFolder(fullPath)
@@ -64,6 +160,73 @@ function App() {
     }
   }, [createFolder, vaultDir])
 
+  const handlePromptSubmit = async () => {
+    if (promptValue.trim()) {
+      if (promptType === 'note') {
+        const filePath = await createNewNote(promptValue.trim())
+        setPromptVisible(false)
+        setPromptValue('')
+        if (filePath) await openNoteInTab(filePath)
+      } else {
+        const sep = vaultDir.includes('\\') ? '\\' : '/'
+        handleCreateFolder(vaultDir + sep + promptValue.trim())
+        setPromptVisible(false)
+        setPromptValue('')
+      }
+    }
+  }
+
+  const handlePromptKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      handlePromptSubmit()
+    }
+    if (e.key === 'Escape') {
+      setPromptVisible(false)
+      setPromptValue('')
+    }
+  }
+
+  const handlePaste = useCallback(async (destFolder: string) => {
+    if (!clipboardPath) return
+    await window.api.copyItem(clipboardPath, destFolder)
+    await refreshNotes()
+  }, [clipboardPath, refreshNotes])
+
+  // Sidebar resize handlers
+  const handleStartResize = (e: React.MouseEvent) => {
+    e.preventDefault()
+    setIsResizing(true)
+    resizeRef.current = { startX: e.clientX, startWidth: sidebarWidth, currentWidth: sidebarWidth }
+
+    const handleResizeMove = (moveEvent: MouseEvent) => {
+      if (!resizeRef.current) return
+      const delta = moveEvent.clientX - resizeRef.current.startX
+      const newWidth = Math.max(180, Math.min(500, resizeRef.current.startWidth + delta))
+      resizeRef.current.currentWidth = newWidth
+      setSidebarWidth(newWidth)
+    }
+
+    const handleResizeEnd = () => {
+      setIsResizing(false)
+      if (resizeRef.current) {
+        // Save the final width tracked during the resize
+        saveSidebarState(resizeRef.current.currentWidth, sidebarCollapsed)
+      }
+      window.removeEventListener('mousemove', handleResizeMove)
+      window.removeEventListener('mouseup', handleResizeEnd)
+      resizeRef.current = null
+    }
+
+    window.addEventListener('mousemove', handleResizeMove)
+    window.addEventListener('mouseup', handleResizeEnd)
+  }
+
+  const handleToggleSidebarCollapse = useCallback(() => {
+    const newCollapsed = !sidebarCollapsed
+    setSidebarCollapsed(newCollapsed)
+    saveSidebarState(sidebarWidth, newCollapsed)
+  }, [sidebarCollapsed, sidebarWidth])
+
   // Refresh note metadata (and thus graph links) whenever the user opens graph view
   useEffect(() => {
     if (viewMode === 'graph') refreshNotes()
@@ -72,34 +235,49 @@ function App() {
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Ctrl+P — search
+      // Don't trigger destructive shortcuts if user is typing in an input or the editor
+      const target = e.target as HTMLElement
+      const isEditing = target.tagName === 'INPUT'
+        || target.tagName === 'TEXTAREA'
+        || target.isContentEditable
+
+      // Ctrl+P — search notes
       if (e.ctrlKey && e.key === 'p') {
         e.preventDefault()
         setSearchVisible(true)
       }
-      // Ctrl+N — new note
+      // Ctrl+F — find in current note
+      if (e.ctrlKey && e.key === 'f') {
+        e.preventDefault()
+        setFindVisible(true)
+      }
+      // Ctrl+N — new note (show modal prompt)
       if (e.ctrlKey && e.key === 'n') {
         e.preventDefault()
-        const name = prompt('Note name:')
-        if (name?.trim()) createNewNote(name.trim())
+        setPromptType('note')
+        setPromptValue('')
+        setPromptVisible(true)
       }
       // Ctrl+G — toggle graph
       if (e.ctrlKey && e.key === 'g') {
         e.preventDefault()
         setViewMode((v) => (v === 'graph' ? 'editor' : 'graph'))
       }
-      // Ctrl+Delete — delete note
-      if (e.ctrlKey && e.key === 'Delete' && activeNote) {
+      // Delete — delete active note (only if not editing content)
+      if (!isEditing && e.key === 'Delete' && activeNote) {
         e.preventDefault()
         window.api.confirm(`Delete "${activeNote.name}"?`).then((ok) => {
-          if (ok) deleteCurrentNote()
+          if (ok) {
+            closeTab(activeTabIndex)
+            deleteCurrentNote()
+          }
         })
       }
     }
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [activeNote, createNewNote, deleteCurrentNote])
+  }, [activeNote, createNewNote, deleteCurrentNote, closeTab, activeTabIndex])
 
   return (
     <div className="app">
@@ -107,11 +285,12 @@ function App() {
         fileTree={fileTree}
         activeNotePath={activeNote?.path || null}
         activeNoteName={activeNote?.name || null}
-        onOpenNote={async (path) => {
-          await openNote(path)
-          setViewMode('editor')
+        onOpenNote={openNoteInTab}
+        onOpenNoteInNewTab={openNoteInTab}
+        onCreateNote={async (name: string, folderPath?: string) => {
+          const filePath = await createNewNote(name, folderPath)
+          if (filePath) await openNoteInTab(filePath)
         }}
-        onCreateNote={createNewNote}
         onCreateFolder={handleCreateFolder}
         onDeleteFolder={deleteFolder}
         onDeleteNote={activeNote ? deleteCurrentNote : undefined}
@@ -120,62 +299,70 @@ function App() {
         onRenameNote={renameNote}
         vaultDir={vaultDir}
         folderColors={folderColors}
+        clipboardPath={clipboardPath}
+        onCopy={setClipboardPath}
+        onPaste={handlePaste}
+        onCollapse={handleToggleSidebarCollapse}
+        style={{ width: sidebarCollapsed ? '0px' : `${sidebarWidth}px`, overflow: 'hidden' }}
+        className={isResizing ? 'sidebar-resizing' : ''}
       />
+      {/* Resize handle — only show when sidebar is not collapsed */}
+      {!sidebarCollapsed && (
+        <div
+          className="resize-handle"
+          onMouseDown={handleStartResize}
+          title="Drag to resize sidebar"
+        />
+      )}
+
+      {/* Expand button — only show when sidebar is collapsed */}
+      {sidebarCollapsed && (
+        <button
+          className="sidebar-expand-btn"
+          onClick={handleToggleSidebarCollapse}
+          title="Expand sidebar"
+        >
+          ⟩
+        </button>
+      )}
+
       <div className="content">
-        {/* Toolbar */}
-        <div className="toolbar">
-          <div className="toolbar-left">
-            {activeNote && viewMode === 'editor' && (
-              <span className="toolbar-title">{activeNote.name}</span>
-            )}
-            {viewMode === 'graph' && (
-              <span className="toolbar-title">Graph View</span>
-            )}
-          </div>
-          <div className="toolbar-right">
-            <button
-              className="toolbar-btn search-btn"
-              onClick={() => setSearchVisible(true)}
-              title="Search (Ctrl+P)"
-            >
-              Search
-            </button>
-            {viewMode === 'graph' && (
-              <button
-                className="toolbar-btn"
-                onClick={() => refreshNotes()}
-                title="Refresh graph"
-              >
-                ↻
-              </button>
-            )}
-            <button
-              className={`toolbar-btn ${viewMode === 'editor' ? 'active' : ''}`}
-              onClick={() => setViewMode('editor')}
-              title="Editor"
-            >
-              Edit
-            </button>
-            <button
-              className={`toolbar-btn ${viewMode === 'graph' ? 'active' : ''}`}
-              onClick={() => setViewMode('graph')}
-              title="Graph View (Ctrl+G)"
-            >
-              Graph
-            </button>
-          </div>
-        </div>
+        {/* Tabs — always visible so the + button is accessible */}
+        <TabBar
+          tabs={openTabs}
+          activeIndex={activeTabIndex}
+          onTabClick={switchTab}
+          onTabClose={closeTab}
+          onNewNote={createNoteInNewTab}
+          onNewFolder={createFolderFromPrompt}
+          clipboardPath={clipboardPath}
+          onPaste={() => handlePaste(vaultDir)}
+          viewMode={viewMode}
+          onSetViewMode={setViewMode}
+          onSearch={() => setSearchVisible(true)}
+          onRefreshGraph={() => refreshNotes()}
+        />
 
         {/* Content Area */}
         {viewMode === 'editor' ? (
           activeNote ? (
-            <Editor
-              key={activeNote.path}
-              content={activeNote.content}
-              onChange={updateContent}
-              noteId={activeNote.path}
-              onLinkClick={resolveLink}
-            />
+            <div ref={editorContainerRef} className="editor-area">
+              <FindBar
+                visible={findVisible}
+                onClose={() => setFindVisible(false)}
+                containerEl={editorContainerRef.current}
+              />
+              <Editor
+                key={activeNote.path}
+                content={activeNote.content}
+                onChange={updateContent}
+                noteId={activeNote.path}
+                onLinkClick={async (linkName: string) => {
+                  const notePath = await resolveLink(linkName)
+                  if (notePath) await openNoteInTab(notePath)
+                }}
+              />
+            </div>
           ) : (
             <div className="content-empty">
               <h2>Welcome to Noted</h2>
@@ -183,6 +370,7 @@ function App() {
               <div className="shortcuts-hint">
                 <p><kbd>Ctrl+N</kbd> New note</p>
                 <p><kbd>Ctrl+P</kbd> Search</p>
+                <p><kbd>Ctrl+F</kbd> Find in note</p>
                 <p><kbd>Ctrl+G</kbd> Graph view</p>
               </div>
             </div>
@@ -198,13 +386,42 @@ function App() {
         )}
       </div>
 
+      {/* Prompt for new note name */}
+      {promptVisible && (
+        <div className="modal-overlay" onClick={() => { setPromptVisible(false); setPromptValue('') }}>
+          <div className="modal-dialog" onClick={(e) => e.stopPropagation()}>
+            <h2>{promptType === 'note' ? 'New Note' : 'New Folder'}</h2>
+            <input
+              type="text"
+              className="modal-input"
+              placeholder={promptType === 'note' ? 'Note name...' : 'Folder name...'}
+              value={promptValue}
+              onChange={(e) => setPromptValue(e.target.value)}
+              onKeyDown={handlePromptKeyDown}
+              autoFocus
+            />
+            <div className="modal-buttons">
+              <button
+                className="modal-btn cancel"
+                onClick={() => { setPromptVisible(false); setPromptValue('') }}
+              >
+                Cancel
+              </button>
+              <button
+                className="modal-btn submit"
+                onClick={handlePromptSubmit}
+              >
+                Create
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Search overlay */}
       <SearchBar
         notes={notes}
-        onOpenNote={async (path) => {
-          await openNote(path)
-          setViewMode('editor')
-        }}
+        onOpenNote={openNoteInTab}
         visible={searchVisible}
         onClose={() => setSearchVisible(false)}
       />

@@ -1,6 +1,5 @@
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import type { FileTreeNode } from '../types'
-import GitPanel from './GitPanel'
 import { DULL_COLOR } from '../hooks/useFolderColors'
 
 interface SidebarProps {
@@ -8,6 +7,7 @@ interface SidebarProps {
   activeNotePath: string | null
   activeNoteName: string | null
   onOpenNote: (path: string) => void | Promise<void>
+  onOpenNoteInNewTab: (path: string) => Promise<void>
   onCreateNote: (name: string, folderPath?: string) => void
   onCreateFolder: (fullPath: string) => void
   onDeleteFolder: (folderPath: string) => void
@@ -17,10 +17,16 @@ interface SidebarProps {
   onRenameNote?: (oldPath: string, newName: string) => Promise<any>
   vaultDir: string
   folderColors: Record<string, string>
+  clipboardPath: string | null
+  onCopy: (path: string) => void
+  onPaste: (destFolder: string) => void
+  onCollapse?: () => void
+  style?: React.CSSProperties
+  className?: string
 }
 
 type CreatingState = { type: 'note' | 'folder'; parentPath: string } | null
-type CtxMenu = { x: number; y: number; node: FileTreeNode } | null
+type CtxMenu = { x: number; y: number; node: FileTreeNode | null } | null
 
 /** OS-agnostic path join for renderer (no Node path module available) */
 function pathJoin(parent: string, name: string) {
@@ -33,6 +39,7 @@ export default function Sidebar({
   activeNotePath,
   activeNoteName,
   onOpenNote,
+  onOpenNoteInNewTab,
   onCreateNote,
   onCreateFolder,
   onDeleteFolder,
@@ -42,6 +49,12 @@ export default function Sidebar({
   onRenameNote,
   vaultDir,
   folderColors,
+  clipboardPath,
+  onCopy,
+  onPaste,
+  onCollapse,
+  style,
+  className,
 }: SidebarProps) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [draggingPath, setDraggingPath] = useState<string | null>(null)
@@ -51,6 +64,54 @@ export default function Sidebar({
   const [renamingPath, setRenamingPath] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
   const [ctxMenu, setCtxMenu] = useState<CtxMenu>(null)
+  const [isRepo, setIsRepo] = useState(false)
+  const [hasChanges, setHasChanges] = useState(false)
+  const [syncing, setSyncing] = useState(false)
+
+  // ── Git Status ────────────────────────────────────────────────────────────
+  const refreshGitStatus = useCallback(async () => {
+    if (!vaultDir) return
+    try {
+      const repo = await window.api.gitIsRepo(vaultDir)
+      setIsRepo(repo)
+      if (repo) {
+        const status = await window.api.gitStatus(vaultDir)
+        const lines = status.trim().split('\n').filter((l: string) => l.trim())
+        setHasChanges(lines.length > 0)
+      }
+    } catch {
+      setIsRepo(false)
+    }
+  }, [vaultDir])
+
+  useEffect(() => {
+    refreshGitStatus()
+    const interval = setInterval(refreshGitStatus, 30000)
+    return () => clearInterval(interval)
+  }, [refreshGitStatus])
+
+  const handleSync = async () => {
+    if (syncing || !vaultDir) return
+    setSyncing(true)
+    try {
+      const now = new Date()
+      const year = now.getFullYear()
+      const month = String(now.getMonth() + 1).padStart(2, '0')
+      const day = String(now.getDate()).padStart(2, '0')
+      const hours = String(now.getHours()).padStart(2, '0')
+      const mins = String(now.getMinutes()).padStart(2, '0')
+      const secs = String(now.getSeconds()).padStart(2, '0')
+      const timestamp = `${year}-${month}-${day} ${hours}:${mins}:${secs}`
+      await window.api.gitSync(vaultDir, `vault sync: ${timestamp}`)
+      // Wait a moment for git operations to fully complete
+      await new Promise(resolve => setTimeout(resolve, 500))
+      await refreshGitStatus()
+    } catch {
+      // Silently fail
+    } finally {
+      setSyncing(false)
+    }
+  }
 
   // ── Folder toggle ──────────────────────────────────────────────────────────
   const toggleFolder = (path: string) => {
@@ -298,7 +359,7 @@ export default function Sidebar({
   const vaultLabel = vaultDir.split(/[/\\]/).pop() || vaultDir
 
   return (
-    <div className="sidebar" onClick={() => setCtxMenu(null)}>
+    <div className={`sidebar${className ? ` ${className}` : ''}`} onClick={() => setCtxMenu(null)} style={style}>
       {/* ── Header ── */}
       <div className="sidebar-header">
         <h2 className="sidebar-title">Noted</h2>
@@ -338,6 +399,16 @@ export default function Sidebar({
               <line x1="5.5" y1="8" x2="8.5" y2="8" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
             </svg>
           </button>
+          {/* Collapse Sidebar */}
+          {onCollapse && (
+            <button
+              className="sidebar-btn icon-btn sidebar-collapse-btn"
+              onClick={(e) => { e.stopPropagation(); onCollapse() }}
+              title="Collapse sidebar"
+            >
+              ⟨
+            </button>
+          )}
         </div>
       </div>
 
@@ -346,6 +417,13 @@ export default function Sidebar({
         className={`sidebar-notes${dragOverPath === '__root__' ? ' drag-over-root' : ''}`}
         onDragOver={(e) => handleDragOver(e, '__root__')}
         onDrop={(e) => handleDrop(e, vaultDir)}
+        onContextMenu={(e) => {
+          // Only fire if the click is on the empty area itself, not on a child node
+          if (e.target === e.currentTarget) {
+            e.preventDefault()
+            setCtxMenu({ x: e.clientX, y: e.clientY, node: null })
+          }
+        }}
       >
         {creating?.parentPath === vaultDir && renderCreateInput(0)}
         {fileTree.map((node) => renderNode(node, 0))}
@@ -353,8 +431,6 @@ export default function Sidebar({
           <div className="sidebar-empty">No notes yet. Click + to create one.</div>
         )}
       </div>
-
-      <GitPanel vaultDir={vaultDir} />
 
       <div className="sidebar-footer">
         <button
@@ -364,6 +440,16 @@ export default function Sidebar({
         >
           {vaultLabel}
         </button>
+        {isRepo && (
+          <button
+            className={`sidebar-btn sync-btn ${hasChanges ? 'has-changes' : ''}`}
+            onClick={handleSync}
+            disabled={syncing || !hasChanges}
+            title={hasChanges ? 'Sync to GitHub' : 'No changes to sync'}
+          >
+            {syncing ? '⟳' : 'Sync'}
+          </button>
+        )}
       </div>
 
       {/* ── Context Menu ── */}
@@ -373,7 +459,34 @@ export default function Sidebar({
           style={{ top: ctxMenu.y, left: ctxMenu.x }}
           onClick={(e) => e.stopPropagation()}
         >
-          {ctxMenu.node.type === 'folder' ? (
+          {ctxMenu.node === null ? (
+            /* Empty-space context menu */
+            <>
+              <div
+                className="context-menu-item"
+                onClick={() => startCreating('note', vaultDir)}
+              >
+                New Note
+              </div>
+              <div
+                className="context-menu-item"
+                onClick={() => startCreating('folder', vaultDir)}
+              >
+                New Folder
+              </div>
+              {clipboardPath && (
+                <>
+                  <div className="context-menu-separator" />
+                  <div
+                    className="context-menu-item"
+                    onClick={() => { onPaste(vaultDir); setCtxMenu(null) }}
+                  >
+                    Paste
+                  </div>
+                </>
+              )}
+            </>
+          ) : ctxMenu.node.type === 'folder' ? (
             <>
               <div
                 className="context-menu-item"
@@ -387,6 +500,22 @@ export default function Sidebar({
               >
                 New Folder Here
               </div>
+              <div className="context-menu-separator" />
+              <div
+                className="context-menu-item"
+                onClick={() => { onCopy(ctxMenu.node.path); setCtxMenu(null) }}
+              >
+                Copy
+              </div>
+              {clipboardPath && (
+                <div
+                  className="context-menu-item"
+                  onClick={() => { onPaste(ctxMenu.node.path); setCtxMenu(null) }}
+                >
+                  Paste
+                </div>
+              )}
+              <div className="context-menu-separator" />
               <div
                 className="context-menu-item"
                 onClick={() => startRename(ctxMenu.node)}
@@ -408,6 +537,20 @@ export default function Sidebar({
               >
                 Open
               </div>
+              <div
+                className="context-menu-item"
+                onClick={() => { onOpenNoteInNewTab(ctxMenu.node.path); setCtxMenu(null) }}
+              >
+                Open in New Tab
+              </div>
+              <div className="context-menu-separator" />
+              <div
+                className="context-menu-item"
+                onClick={() => { onCopy(ctxMenu.node.path); setCtxMenu(null) }}
+              >
+                Copy
+              </div>
+              <div className="context-menu-separator" />
               <div
                 className="context-menu-item"
                 onClick={() => startRename(ctxMenu.node)}

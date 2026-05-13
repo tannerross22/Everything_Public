@@ -16,6 +16,7 @@ contextBridge.exposeInMainWorld('api', {
   renameNote: (vaultDir: string, oldPath: string, newName: string): Promise<{ newPath: string; updatedCount: number }> => ipcRenderer.invoke('vault:rename', vaultDir, oldPath, newName),
   createFolder: (folderPath: string): Promise<string> => ipcRenderer.invoke('vault:createFolder', folderPath),
   moveNote: (oldPath: string, newFolderPath: string): Promise<string> => ipcRenderer.invoke('vault:moveNote', oldPath, newFolderPath),
+  copyItem: (sourcePath: string, destFolder: string): Promise<string> => ipcRenderer.invoke('vault:copyItem', sourcePath, destFolder),
 
   // File watcher events
   onFilesChanged: (callback: () => void) => {
