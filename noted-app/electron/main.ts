@@ -9,6 +9,7 @@ import {
   writeNote,
   createNote,
   deleteNote,
+  deleteFolder,
   renameNote,
   createFolder,
   moveNote,
@@ -152,6 +153,12 @@ function registerIpcHandlers() {
     setTimeout(() => { isWriting = false }, 200)
   })
 
+  ipcMain.handle('vault:deleteFolder', (_event, folderPath: string) => {
+    isWriting = true
+    deleteFolder(folderPath)
+    setTimeout(() => { isWriting = false }, 500)
+  })
+
   ipcMain.handle('vault:rename', (_event, vaultDir: string, oldPath: string, newName: string) => {
     isWriting = true
     const result = renameNote(vaultDir, oldPath, newName)
@@ -181,6 +188,19 @@ function registerIpcHandlers() {
     if (mainWindow) {
       mainWindow.setTitle(title)
     }
+  })
+
+  // Native confirm dialog — avoids renderer confirm() which corrupts Electron focus state
+  ipcMain.handle('dialog:confirm', async (_event, message: string) => {
+    if (!mainWindow) return false
+    const result = await dialog.showMessageBox(mainWindow, {
+      type: 'question',
+      buttons: ['Cancel', 'Delete'],
+      defaultId: 1,
+      cancelId: 0,
+      message,
+    })
+    return result.response === 1
   })
 }
 

@@ -16,6 +16,7 @@ declare global {
       writeNote: (filePath: string, content: string) => Promise<void>
       createNote: (vaultDir: string, name: string) => Promise<string>
       deleteNote: (filePath: string) => Promise<void>
+      deleteFolder: (folderPath: string) => Promise<void>
       renameNote: (vaultDir: string, oldPath: string, newName: string) => Promise<{ newPath: string; updatedCount: number }>
       createFolder: (folderPath: string) => Promise<string>
       moveNote: (oldPath: string, newFolderPath: string) => Promise<string>
@@ -31,6 +32,7 @@ declare global {
 
       // Window
       setTitle: (title: string) => Promise<void>
+      confirm: (message: string) => Promise<boolean>
     }
   }
 }

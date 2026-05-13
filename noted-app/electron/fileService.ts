@@ -76,14 +76,12 @@ export function buildFileTree(vaultDir: string): FileTreeNode[] {
         })
       } else if (entry.isDirectory()) {
         const children = walkDir(fullPath)
-        if (children.length > 0) {
-          nodes.push({
-            name: entry.name,
-            type: 'folder',
-            path: fullPath,
-            children,
-          })
-        }
+        nodes.push({
+          name: entry.name,
+          type: 'folder',
+          path: fullPath,
+          children,
+        })
       }
     }
 
@@ -152,6 +150,13 @@ export function createFolder(folderPath: string): string {
     fs.mkdirSync(folderPath, { recursive: true })
   }
   return folderPath
+}
+
+/**
+ * Delete a folder and all its contents recursively
+ */
+export function deleteFolder(folderPath: string): void {
+  fs.rmSync(folderPath, { recursive: true, force: true })
 }
 
 /**

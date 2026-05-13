@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import * as d3 from 'd3'
 import type { GraphNode, GraphLink } from '../types'
+import { getTopLevelFolder, DULL_COLOR } from '../hooks/useFolderColors'
 
 interface D3Node extends GraphNode, d3.SimulationNodeDatum {
   linkCount?: number
@@ -15,9 +16,11 @@ interface GraphViewProps {
   nodes: GraphNode[]
   links: GraphLink[]
   onNodeClick: (noteId: string) => void
+  folderColors: Record<string, string>
+  vaultDir: string
 }
 
-export default function GraphView({ nodes, links, onNodeClick }: GraphViewProps) {
+export default function GraphView({ nodes, links, onNodeClick, folderColors, vaultDir }: GraphViewProps) {
   const svgRef = useRef<SVGSVGElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
 
@@ -63,24 +66,41 @@ export default function GraphView({ nodes, links, onNodeClick }: GraphViewProps)
 
     svg.call(zoom)
 
-    // Force simulation
+    const nodeRadius = (d: D3Node) => Math.min(14 + (d.linkCount || 0) * 5, 32)
+
+    // Radial layout: most-connected nodes near center, isolated nodes on outer ring
+    const maxLinks = Math.max(...simNodes.map((d) => d.linkCount || 0), 1)
+    const outerRadius = Math.min(width, height) * 0.38
+
+    // 0 links → outerRadius (edge), maxLinks → 40px (near center)
+    const radialTarget = (d: D3Node) => {
+      const ratio = (d.linkCount || 0) / maxLinks
+      return 40 + (outerRadius - 40) * (1 - ratio)
+    }
+
     const simulation = d3.forceSimulation(simNodes)
       .force('link', d3.forceLink<D3Node, D3Link>(simLinks)
         .id((d) => d.id)
-        .distance(120)
+        .distance(110)
       )
-      .force('charge', d3.forceManyBody().strength(-250))
+      .force('charge', d3.forceManyBody().strength(-110))
       .force('center', d3.forceCenter(width / 2, height / 2))
-      .force('collision', d3.forceCollide().radius(35))
+      .force('radial', d3.forceRadial<D3Node>(
+        (d) => radialTarget(d),
+        width / 2,
+        height / 2
+      ).strength(0.7))
+      .force('collision', d3.forceCollide().radius((d) => nodeRadius(d as D3Node) + 20))
+      .alphaDecay(0.04)
 
-    // Draw links
+    // Draw links — bright enough to read on dark bg
     const link = g.append('g')
       .selectAll('line')
       .data(simLinks)
       .join('line')
-      .attr('stroke', '#585b70')
-      .attr('stroke-width', 1.5)
-      .attr('stroke-opacity', 0.6)
+      .attr('stroke', '#9399b2')
+      .attr('stroke-width', 2)
+      .attr('stroke-opacity', 0.85)
 
     // Draw nodes
     const node = g.append('g')
@@ -90,34 +110,57 @@ export default function GraphView({ nodes, links, onNodeClick }: GraphViewProps)
       .attr('cursor', 'pointer')
       .call(drag(simulation) as any)
 
+    // Resolve node color from top-level folder
+    const nodeColor = (d: D3Node): string => {
+      if (!d.path || !vaultDir) return DULL_COLOR
+      const folder = getTopLevelFolder(d.path, vaultDir)
+      if (!folder) return DULL_COLOR
+      return folderColors[folder] ?? DULL_COLOR
+    }
+
+    // Hover color: slightly brighter version of the node color
+    const nodeHoverColor = (d: D3Node): string => {
+      const base = d3.color(nodeColor(d))
+      return base ? base.brighter(0.4).formatHex() : nodeColor(d)
+    }
+
+    // Stroke: slightly darker version
+    const nodeStroke = (d: D3Node): string => {
+      const base = d3.color(nodeColor(d))
+      return base ? base.darker(0.5).formatHex() : '#45475a'
+    }
+
     // Node circles
     node.append('circle')
-      .attr('r', (d) => Math.min(6 + (d.linkCount || 0) * 3, 20))
-      .attr('fill', (d) => d.path ? '#cba6f7' : '#585b70')
-      .attr('stroke', (d) => d.path ? '#9370db' : '#45475a')
+      .attr('r', nodeRadius)
+      .attr('fill', nodeColor)
+      .attr('stroke', nodeStroke)
       .attr('stroke-width', 2)
 
     // Node labels
     node.append('text')
       .text((d) => d.id)
       .attr('text-anchor', 'middle')
-      .attr('dy', (d) => Math.min(6 + (d.linkCount || 0) * 3, 20) + 14)
-      .attr('fill', (d) => d.path ? '#cdd6f4' : '#6c7086')
-      .attr('font-size', '11px')
+      .attr('dy', (d) => nodeRadius(d) + 16)
+      .attr('fill', '#cdd6f4')
+      .attr('font-size', '13px')
+      .attr('font-weight', '500')
       .attr('font-family', '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif')
 
     // Hover effects
     node
-      .on('mouseenter', function () {
+      .on('mouseenter', function (_event, d) {
         d3.select(this).select('circle')
-          .transition().duration(200)
-          .attr('fill', '#d4b8ff')
+          .transition().duration(150)
+          .attr('r', nodeRadius(d) * 1.2)
+          .attr('fill', nodeHoverColor(d))
           .attr('stroke-width', 3)
       })
       .on('mouseleave', function (_event, d) {
         d3.select(this).select('circle')
-          .transition().duration(200)
-          .attr('fill', d.path ? '#cba6f7' : '#585b70')
+          .transition().duration(150)
+          .attr('r', nodeRadius(d))
+          .attr('fill', nodeColor(d))
           .attr('stroke-width', 2)
       })
 

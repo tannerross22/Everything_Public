@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import type { NoteFile, NoteContent } from '../types'
+import type { NoteFile, NoteContent, FileTreeNode } from '../types'
 
 export function useVault() {
   const [vaultDir, setVaultDir] = useState<string>('')
   const [notes, setNotes] = useState<NoteFile[]>([])
+  const [fileTree, setFileTree] = useState<FileTreeNode[]>([])
   const [activeNote, setActiveNote] = useState<NoteContent | null>(null)
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -14,11 +15,15 @@ export function useVault() {
     })
   }, [])
 
-  // Fetch notes whenever vault dir changes
+  // Fetch flat list + tree whenever vault dir changes
   const refreshNotes = useCallback(async () => {
     if (!vaultDir) return
-    const noteList = await window.api.listNotes(vaultDir)
+    const [noteList, tree] = await Promise.all([
+      window.api.listNotes(vaultDir),
+      window.api.buildFileTree(vaultDir),
+    ])
     setNotes(noteList)
+    setFileTree(tree)
   }, [vaultDir])
 
   useEffect(() => {
@@ -29,12 +34,10 @@ export function useVault() {
   useEffect(() => {
     const unsubscribe = window.api.onFilesChanged(() => {
       refreshNotes()
-      // If active note was changed externally, reload it
       if (activeNote) {
         window.api.readNote(activeNote.path).then((content) => {
           setActiveNote((prev) => prev ? { ...prev, content } : null)
         }).catch(() => {
-          // File might have been deleted
           setActiveNote(null)
         })
       }
@@ -52,9 +55,7 @@ export function useVault() {
 
   // Save note with debouncing
   const saveNote = useCallback((filePath: string, content: string) => {
-    if (saveTimerRef.current) {
-      clearTimeout(saveTimerRef.current)
-    }
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
     saveTimerRef.current = setTimeout(async () => {
       await window.api.writeNote(filePath, content)
     }, 500)
@@ -67,15 +68,16 @@ export function useVault() {
     saveNote(activeNote.path, content)
   }, [activeNote?.path, saveNote])
 
-  // Create a new note
-  const createNewNote = useCallback(async (name: string) => {
+  // Create a new note — optionally inside a folder
+  const createNewNote = useCallback(async (name: string, folderPath?: string) => {
     if (!vaultDir || !name.trim()) return
-    const filePath = await window.api.createNote(vaultDir, name.trim())
+    const targetDir = folderPath ?? vaultDir
+    const filePath = await window.api.createNote(targetDir, name.trim())
     await refreshNotes()
     await openNote(filePath)
   }, [vaultDir, refreshNotes, openNote])
 
-  // Delete a note
+  // Delete the currently active note
   const deleteCurrentNote = useCallback(async () => {
     if (!activeNote) return
     await window.api.deleteNote(activeNote.path)
@@ -94,12 +96,11 @@ export function useVault() {
     }
   }, [])
 
-  // Rename a note and update all references
+  // Rename a note and update all wikilink references
   const renameNote = useCallback(async (oldPath: string, newName: string) => {
     if (!vaultDir || !newName.trim()) return
     try {
       const result = await window.api.renameNote(vaultDir, oldPath, newName)
-      // If this was the active note, update it
       if (activeNote?.path === oldPath) {
         setActiveNote((prev) => prev ? { ...prev, path: result.newPath, name: newName } : null)
       }
@@ -111,11 +112,35 @@ export function useVault() {
     }
   }, [vaultDir, activeNote?.path, refreshNotes])
 
-  // Resolve a wiki link — find note by name or create it
+  // Create a folder at the given full path
+  const createFolder = useCallback(async (fullPath: string) => {
+    await window.api.createFolder(fullPath)
+    await refreshNotes()
+  }, [refreshNotes])
+
+  // Delete a folder and all its contents
+  const deleteFolder = useCallback(async (folderPath: string) => {
+    await window.api.deleteFolder(folderPath)
+    // Clear active note if it lived inside the deleted folder
+    if (activeNote) {
+      const sep = folderPath.includes('\\') ? '\\' : '/'
+      if (activeNote.path.startsWith(folderPath + sep)) {
+        setActiveNote(null)
+        window.api.setTitle('Noted')
+      }
+    }
+    await refreshNotes()
+  }, [activeNote?.path, refreshNotes])
+
+  // Move a file or folder to a new parent folder
+  const moveItem = useCallback(async (oldPath: string, newFolderPath: string) => {
+    await window.api.moveNote(oldPath, newFolderPath)
+    await refreshNotes()
+  }, [refreshNotes])
+
+  // Resolve a wiki link — open existing note or create new one
   const resolveLink = useCallback(async (linkName: string) => {
-    const match = notes.find(
-      (n) => n.name.toLowerCase() === linkName.toLowerCase()
-    )
+    const match = notes.find((n) => n.name.toLowerCase() === linkName.toLowerCase())
     if (match) {
       await openNote(match.path)
     } else {
@@ -126,6 +151,7 @@ export function useVault() {
   return {
     vaultDir,
     notes,
+    fileTree,
     activeNote,
     openNote,
     updateContent,
@@ -133,6 +159,9 @@ export function useVault() {
     deleteCurrentNote,
     changeVaultDir,
     renameNote,
+    createFolder,
+    deleteFolder,
+    moveItem,
     resolveLink,
     refreshNotes,
   }

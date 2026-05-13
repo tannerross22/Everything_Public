@@ -5,6 +5,11 @@ import Sidebar from './components/Sidebar'
 import Editor from './components/Editor'
 import GraphView from './components/GraphView'
 import SearchBar from './components/SearchBar'
+import {
+  loadFolderColors,
+  assignFolderColor,
+  isTopLevelFolder,
+} from './hooks/useFolderColors'
 
 type ViewMode = 'editor' | 'graph'
 
@@ -12,6 +17,7 @@ function App() {
   const {
     vaultDir,
     notes,
+    fileTree,
     activeNote,
     openNote,
     updateContent,
@@ -19,17 +25,49 @@ function App() {
     deleteCurrentNote,
     changeVaultDir,
     renameNote,
+    createFolder,
+    deleteFolder,
+    moveItem,
     resolveLink,
+    refreshNotes,
   } = useVault()
 
   const { nodes, links } = useGraph(notes, vaultDir)
   const [viewMode, setViewMode] = useState<ViewMode>('editor')
   const [searchVisible, setSearchVisible] = useState(false)
+  const [folderColors, setFolderColors] = useState<Record<string, string>>(() => loadFolderColors())
+
+  // Auto-assign colors whenever the file tree changes (e.g. vault opened, folder created)
+  useEffect(() => {
+    if (!vaultDir) return
+    const updated = { ...loadFolderColors() }
+    let changed = false
+    for (const node of fileTree) {
+      if (node.type === 'folder' && isTopLevelFolder(node.path, vaultDir) && !updated[node.path]) {
+        updated[node.path] = assignFolderColor(node.path)
+        changed = true
+      }
+    }
+    if (changed) setFolderColors(updated)
+  }, [fileTree, vaultDir])
 
   const handleGraphNodeClick = useCallback((noteId: string) => {
     resolveLink(noteId)
     setViewMode('editor')
   }, [resolveLink])
+
+  const handleCreateFolder = useCallback((fullPath: string) => {
+    createFolder(fullPath)
+    if (vaultDir && isTopLevelFolder(fullPath, vaultDir)) {
+      const color = assignFolderColor(fullPath)
+      setFolderColors((prev) => ({ ...prev, [fullPath]: color }))
+    }
+  }, [createFolder, vaultDir])
+
+  // Refresh note metadata (and thus graph links) whenever the user opens graph view
+  useEffect(() => {
+    if (viewMode === 'graph') refreshNotes()
+  }, [viewMode])
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -53,9 +91,9 @@ function App() {
       // Ctrl+Delete — delete note
       if (e.ctrlKey && e.key === 'Delete' && activeNote) {
         e.preventDefault()
-        if (confirm(`Delete "${activeNote.name}"?`)) {
-          deleteCurrentNote()
-        }
+        window.api.confirm(`Delete "${activeNote.name}"?`).then((ok) => {
+          if (ok) deleteCurrentNote()
+        })
       }
     }
 
@@ -66,18 +104,22 @@ function App() {
   return (
     <div className="app">
       <Sidebar
-        notes={notes}
+        fileTree={fileTree}
         activeNotePath={activeNote?.path || null}
+        activeNoteName={activeNote?.name || null}
         onOpenNote={async (path) => {
           await openNote(path)
           setViewMode('editor')
         }}
         onCreateNote={createNewNote}
+        onCreateFolder={handleCreateFolder}
+        onDeleteFolder={deleteFolder}
         onDeleteNote={activeNote ? deleteCurrentNote : undefined}
+        onMoveItem={moveItem}
         onChangeVault={changeVaultDir}
         onRenameNote={renameNote}
         vaultDir={vaultDir}
-        activeNoteName={activeNote?.name || null}
+        folderColors={folderColors}
       />
       <div className="content">
         {/* Toolbar */}
@@ -98,6 +140,15 @@ function App() {
             >
               Search
             </button>
+            {viewMode === 'graph' && (
+              <button
+                className="toolbar-btn"
+                onClick={() => refreshNotes()}
+                title="Refresh graph"
+              >
+                ↻
+              </button>
+            )}
             <button
               className={`toolbar-btn ${viewMode === 'editor' ? 'active' : ''}`}
               onClick={() => setViewMode('editor')}
@@ -141,6 +192,8 @@ function App() {
             nodes={nodes}
             links={links}
             onNodeClick={handleGraphNodeClick}
+            folderColors={folderColors}
+            vaultDir={vaultDir}
           />
         )}
       </div>

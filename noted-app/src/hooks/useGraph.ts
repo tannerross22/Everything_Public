@@ -33,22 +33,16 @@ export function useGraph(notes: NoteFile[], vaultDir: string) {
     for (const note of notes) {
       try {
         const content = await window.api.readNote(note.path)
-        const regex = /\[\[([^\]]+)\]\]/g
+        const regex = /\\?\[\\?\[([^\]]+)\]\]/g
         let match
 
         while ((match = regex.exec(content)) !== null) {
-          const targetName = match[1]
+          const targetName = match[1].trim()
           const targetKey = targetName.toLowerCase()
 
-          // Add phantom node if target doesn't exist
-          if (!nodesMap.has(targetKey)) {
-            nodesMap.set(targetKey, {
-              id: targetName,
-              path: undefined, // phantom — note doesn't exist yet
-            })
-          }
+          // Only draw links to notes that actually exist; skip phantom nodes
+          if (!nodesMap.has(targetKey)) continue
 
-          // Add link
           links.push({
             source: note.name,
             target: nodesMap.get(targetKey)!.id,

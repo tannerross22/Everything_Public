@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld('api', {
   writeNote: (filePath: string, content: string) => ipcRenderer.invoke('vault:write', filePath, content),
   createNote: (vaultDir: string, name: string): Promise<string> => ipcRenderer.invoke('vault:create', vaultDir, name),
   deleteNote: (filePath: string) => ipcRenderer.invoke('vault:delete', filePath),
+  deleteFolder: (folderPath: string) => ipcRenderer.invoke('vault:deleteFolder', folderPath),
   renameNote: (vaultDir: string, oldPath: string, newName: string): Promise<{ newPath: string; updatedCount: number }> => ipcRenderer.invoke('vault:rename', vaultDir, oldPath, newName),
   createFolder: (folderPath: string): Promise<string> => ipcRenderer.invoke('vault:createFolder', folderPath),
   moveNote: (oldPath: string, newFolderPath: string): Promise<string> => ipcRenderer.invoke('vault:moveNote', oldPath, newFolderPath),
@@ -30,4 +31,7 @@ contextBridge.exposeInMainWorld('api', {
 
   // Window
   setTitle: (title: string) => ipcRenderer.invoke('window:setTitle', title),
+
+  // Native confirm dialog (avoids renderer confirm() which corrupts Electron focus)
+  confirm: (message: string): Promise<boolean> => ipcRenderer.invoke('dialog:confirm', message),
 })

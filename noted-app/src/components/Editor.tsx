@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { Editor as MilkdownEditor, rootCtx, defaultValueCtx, editorViewCtx } from '@milkdown/core'
+import { TextSelection } from '@milkdown/prose/state'
 import { commonmark } from '@milkdown/preset-commonmark'
 import { gfm } from '@milkdown/preset-gfm'
 import { history } from '@milkdown/plugin-history'
@@ -54,17 +55,15 @@ export default function Editor({ content, onChange, noteId, onLinkClick }: Edito
 
       editorInstanceRef.current = editor
 
-      // Force focus: window.focus() restores Electron window focus after confirm(),
-      // then view.focus() gives ProseMirror the cursor
-      window.focus()
-      setTimeout(() => {
-        try {
-          const view = editor.ctx.get(editorViewCtx)
-          if (view) {
-            view.focus()
-          }
-        } catch {}
-      }, 50)
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          try {
+            if (editorInstanceRef.current !== editor) return
+            const view = editor.ctx.get(editorViewCtx)
+            if (view) view.dom.focus()
+          } catch {}
+        })
+      })
     }
 
     createEditor()
@@ -86,45 +85,37 @@ export default function Editor({ content, onChange, noteId, onLinkClick }: Edito
     const handleClick = (e: MouseEvent) => {
       if (!editorInstanceRef.current) return
 
-      // Only handle clicks directly on the container or wrapper, not inside editor content
-      const target = e.target as HTMLElement
-      if (target.closest('.ProseMirror')) return
-
       try {
         const view = editorInstanceRef.current.ctx.get(editorViewCtx)
         if (!view) return
 
-        // Find where the content ends
         const proseMirrorEl = container.querySelector('.ProseMirror') as HTMLElement
         if (!proseMirrorEl) return
-        const contentBottom = proseMirrorEl.getBoundingClientRect().bottom
-        // Use the last child's bottom as the real content bottom
+
         const lastChild = proseMirrorEl.lastElementChild as HTMLElement
         const realContentBottom = lastChild
           ? lastChild.getBoundingClientRect().bottom
-          : contentBottom
+          : proseMirrorEl.getBoundingClientRect().bottom
 
-        const clickY = e.clientY
+        // Click is within content — let ProseMirror handle it natively
+        if (e.clientY <= realContentBottom) return
 
-        // Only act if click is below existing content
-        if (clickY <= realContentBottom) return
+        // Click is below content — we handle it
+        e.preventDefault()
 
-        const gap = clickY - realContentBottom
+        const gap = e.clientY - realContentBottom
         const linesToAdd = Math.max(1, Math.round(gap / LINE_HEIGHT))
 
-        // Insert empty paragraphs at the end of the document
         const { state } = view
         const { tr, schema } = state
         const emptyParagraph = schema.nodes.paragraph.create()
-        const endPos = state.doc.content.size
 
         for (let i = 0; i < linesToAdd; i++) {
           tr.insert(tr.doc.content.size, emptyParagraph)
         }
 
-        // Place cursor at the very end
         const newEnd = tr.doc.content.size
-        tr.setSelection(state.selection.constructor.near(tr.doc.resolve(newEnd - 1)))
+        tr.setSelection(TextSelection.near(tr.doc.resolve(newEnd - 1)))
         view.dispatch(tr)
         view.focus()
       } catch {}
