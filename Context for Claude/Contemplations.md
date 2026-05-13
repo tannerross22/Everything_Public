@@ -12,7 +12,7 @@ In this study, we will confront the such issues as regarding:
 
 That is the question
 
-<br />
+Contemplations changed, let's try syncing this thing. 
 
 <br />
 

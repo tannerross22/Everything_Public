@@ -299,22 +299,91 @@ export function gitSync(vaultDir: string, message: string): Promise<string> {
           return reject(err2)
         }
 
-        console.log(`[gitSync] >>> Commit created, pushing to remote...`)
+        console.log(`[gitSync] >>> Commit created, fetching remote changes...`)
 
-        // Push current branch to origin with upstream set
-        // Using 'HEAD' pushes the current branch, avoiding hardcoded master/main issues
-        execFile('git', ['push', '-u', 'origin', 'HEAD', '-v'], { cwd: vaultDir }, (err3, stdout3, stderr3) => {
-          console.log(`[gitSync] git push -u origin HEAD -v completed`)
-          console.log(`[gitSync]   stdout: "${stdout3}"`)
-          console.log(`[gitSync]   stderr: "${stderr3}"`)
-          if (err3) {
-            console.error(`[gitSync] Error in git push:`, err3.message)
-            console.error(`[gitSync]   Full error:`, err3)
-            return reject(err3)
+        // First, fetch to get all remote refs
+        execFile('git', ['fetch', 'origin'], { cwd: vaultDir }, (errFetch, stdoutFetch, stderrFetch) => {
+          console.log(`[gitSync] git fetch origin completed`)
+          console.log(`[gitSync]   stdout: "${stdoutFetch}"`)
+          console.log(`[gitSync]   stderr: "${stderrFetch}"`)
+          if (errFetch) {
+            console.error(`[gitSync] Error in git fetch:`, errFetch.message)
+            return reject(errFetch)
           }
 
-          console.log(`[gitSync] ========== SYNC SUCCESSFUL! ==========`)
-          resolve('Synced successfully')
+          console.log(`[gitSync] >>> Remote refs updated, checking branch state...`)
+
+          // Get current branch name - if detached, we need to attach to a proper branch
+          execFile('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: vaultDir }, (errBranch, currentBranch) => {
+            let branch = currentBranch.trim()
+            console.log(`[gitSync] Current branch/HEAD: ${branch}`)
+
+            // If detached HEAD, find and checkout a proper branch
+            if (branch === 'HEAD') {
+              console.log(`[gitSync] Detached HEAD state detected, finding a valid branch...`)
+
+              // Get list of remote branches to find a valid one to checkout
+              execFile('git', ['branch', '-r'], { cwd: vaultDir }, (errList, branchList) => {
+                console.log(`[gitSync] Remote branches:\n${branchList}`)
+
+                // Try to find master or main
+                let targetBranch = 'master'
+                if (branchList.includes('origin/main')) {
+                  targetBranch = 'main'
+                }
+
+                console.log(`[gitSync] Checking out ${targetBranch}...`)
+                execFile('git', ['checkout', '-B', targetBranch, `origin/${targetBranch}`], { cwd: vaultDir }, (errCheckout) => {
+                  if (errCheckout) {
+                    console.error(`[gitSync] Error checking out branch:`, errCheckout.message)
+                    return reject(errCheckout)
+                  }
+
+                  branch = targetBranch
+                  continueSync(branch)
+                })
+              })
+            } else {
+              continueSync(branch)
+            }
+
+            function continueSync(branch: string) {
+              console.log(`[gitSync] >>> Pulling remote changes on branch: ${branch}...`)
+
+              // Pull with explicit remote and branch reference (merge strategy, no rebase)
+              // Regular merge is simpler and avoids complex rebase conflicts
+              execFile('git', ['pull', 'origin', branch], { cwd: vaultDir }, (err2b, stdout2b, stderr2b) => {
+                console.log(`[gitSync] git pull origin ${branch} completed`)
+                console.log(`[gitSync]   stdout: "${stdout2b}"`)
+                console.log(`[gitSync]   stderr: "${stderr2b}"`)
+                if (err2b) {
+                  console.warn(`[gitSync] Warning during pull:`, err2b.message)
+                  // Try to abort any in-progress rebase/merge
+                  execFile('git', ['rebase', '--abort'], { cwd: vaultDir }, () => {
+                    console.log(`[gitSync] Aborted any in-progress rebase`)
+                  })
+                  // Don't reject - we still have our commits locally
+                }
+
+                console.log(`[gitSync] >>> Remote changes integrated, pushing to remote...`)
+
+                // Push to current branch explicitly
+                execFile('git', ['push', '-u', 'origin', branch, '-v'], { cwd: vaultDir }, (err3, stdout3, stderr3) => {
+                  console.log(`[gitSync] git push -u origin ${branch} -v completed`)
+                  console.log(`[gitSync]   stdout: "${stdout3}"`)
+                  console.log(`[gitSync]   stderr: "${stderr3}"`)
+                  if (err3) {
+                    console.error(`[gitSync] Error in git push:`, err3.message)
+                    console.error(`[gitSync]   Full error:`, err3)
+                    return reject(err3)
+                  }
+
+                  console.log(`[gitSync] ========== SYNC SUCCESSFUL! ==========`)
+                  resolve('Synced successfully')
+                })
+              })
+            }
+          })
         })
       })
     })
