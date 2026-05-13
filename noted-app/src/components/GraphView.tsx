@@ -78,6 +78,45 @@ export default function GraphView({ nodes, links, onNodeClick, folderColors, vau
       return 40 + (outerRadius - 40) * (1 - ratio)
     }
 
+    // Extract folder path from node path
+    const getFolder = (path: string): string => {
+      // Get everything except the filename
+      const parts = path.split(/[/\\]/)
+      parts.pop() // Remove filename
+      return parts.join('/') // Return folder path
+    }
+
+    // Custom force to cluster nodes from the same folder
+    const folderClusterForce = () => {
+      for (const node of simNodes) {
+        const nodeFolder = getFolder(node.path)
+
+        // Find other nodes in the same folder
+        for (const other of simNodes) {
+          if (node === other || !other.x || !other.y || !node.x || !node.y) continue
+
+          const otherFolder = getFolder(other.path)
+          if (nodeFolder === otherFolder) {
+            // Attractive force between nodes in same folder
+            const dx = other.x - node.x
+            const dy = other.y - node.y
+            const distance = Math.sqrt(dx * dx + dy * dy)
+
+            if (distance > 1) {
+              const strength = 0.05 // Moderate attraction
+              const fx = (dx / distance) * strength
+              const fy = (dy / distance) * strength
+
+              node.vx = (node.vx || 0) + fx
+              node.vy = (node.vy || 0) + fy
+              other.vx = (other.vx || 0) - fx
+              other.vy = (other.vy || 0) - fy
+            }
+          }
+        }
+      }
+    }
+
     const simulation = d3.forceSimulation(simNodes)
       .force('link', d3.forceLink<D3Node, D3Link>(simLinks)
         .id((d) => d.id)
@@ -90,6 +129,7 @@ export default function GraphView({ nodes, links, onNodeClick, folderColors, vau
         width / 2,
         height / 2
       ).strength(0.7))
+      .force('folderCluster', folderClusterForce as any)
       .force('collision', d3.forceCollide().radius((d) => nodeRadius(d as D3Node) + 20))
       .alphaDecay(0.04)
 

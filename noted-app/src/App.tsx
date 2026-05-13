@@ -56,6 +56,13 @@ function App() {
   const [isResizing, setIsResizing] = useState(false)
   const resizeRef = useRef<{ startX: number; startWidth: number; currentWidth: number } | null>(null)
 
+  // Git setup modal
+  const [isGitRepo, setIsGitRepo] = useState(false)
+  const [showGitSetup, setShowGitSetup] = useState(false)
+  const [gitUrl, setGitUrl] = useState('')
+  const [gitSetupLoading, setGitSetupLoading] = useState(false)
+  const [gitSetupError, setGitSetupError] = useState<string | null>(null)
+
   // Whether a tab is selected (activeNote from useVault has the content)
   const hasActiveTab = activeTabIndex >= 0 && activeTabIndex < openTabs.length
 
@@ -226,6 +233,99 @@ function App() {
     setSidebarCollapsed(newCollapsed)
     saveSidebarState(sidebarWidth, newCollapsed)
   }, [sidebarCollapsed, sidebarWidth])
+
+  // Check if vault is a git repo when vaultDir changes
+  useEffect(() => {
+    if (!vaultDir) {
+      console.log('[Git Setup] No vaultDir yet')
+      return
+    }
+
+    console.log('[Git Setup] Checking if vaultDir is a git repo:', vaultDir)
+
+    const checkGitRepo = async () => {
+      try {
+        console.log('[Git Setup] Calling window.api.isGitRepo...')
+        const isRepo = await window.api.isGitRepo(vaultDir)
+        console.log('[Git Setup] isGitRepo result:', isRepo)
+        setIsGitRepo(isRepo)
+        // If not a git repo, show setup modal
+        if (!isRepo) {
+          console.log('[Git Setup] Not a git repo, showing setup modal')
+          setShowGitSetup(true)
+          setGitUrl('')
+          setGitSetupError(null)
+        } else {
+          console.log('[Git Setup] Already a git repo')
+        }
+      } catch (error) {
+        console.error('[Git Setup] Error checking git repo:', error)
+        // Treat errors as "not a repo" and show setup modal
+        setIsGitRepo(false)
+        setShowGitSetup(true)
+        setGitUrl('')
+        setGitSetupError(null)
+      }
+    }
+
+    checkGitRepo()
+  }, [vaultDir])
+
+  // Handle Git setup
+  const handleGitSetup = async () => {
+    if (!gitUrl.trim()) {
+      setGitSetupError('Please enter a GitHub repository URL')
+      return
+    }
+
+    // Basic URL validation
+    const urlPattern = /^https:\/\/github\.com\/[\w-]+\/[\w.-]+(?:\.git)?$/i
+    if (!urlPattern.test(gitUrl.trim())) {
+      setGitSetupError('Please enter a valid GitHub repository URL (e.g., https://github.com/username/repo or https://github.com/username/repo.git)')
+      return
+    }
+
+    setGitSetupLoading(true)
+    setGitSetupError(null)
+
+    try {
+      // Step 1: Initialize git repo
+      await window.api.gitInit(vaultDir)
+
+      // Step 2: Add remote
+      const remoteUrl = gitUrl.trim().endsWith('.git') ? gitUrl.trim() : `${gitUrl.trim()}.git`
+      await window.api.gitAddRemote(vaultDir, 'origin', remoteUrl)
+
+      // Step 3: Create initial commit
+      await window.api.gitInitialCommit(vaultDir, 'Initial commit from Noted')
+
+      // Setup complete
+      setIsGitRepo(true)
+      setShowGitSetup(false)
+      setGitUrl('')
+      setGitSetupError(null)
+
+      // Refresh notes to update sidebar git status
+      await refreshNotes()
+    } catch (error: any) {
+      console.error('Git setup error:', error)
+      const errorMessage = error?.message || 'Failed to set up Git repository'
+      setGitSetupError(errorMessage)
+    } finally {
+      setGitSetupLoading(false)
+    }
+  }
+
+  const handleGitSetupKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !gitSetupLoading) {
+      handleGitSetup()
+    }
+    if (e.key === 'Escape') {
+      setShowGitSetup(false)
+      setGitUrl('')
+      setGitSetupError(null)
+    }
+  }
 
   // Refresh note metadata (and thus graph links) whenever the user opens graph view
   useEffect(() => {
@@ -412,6 +512,49 @@ function App() {
                 onClick={handlePromptSubmit}
               >
                 Create
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Git Setup Modal */}
+      {showGitSetup && !isGitRepo && (
+        <div className="modal-overlay" onClick={() => { setShowGitSetup(false); setGitUrl(''); setGitSetupError(null) }}>
+          <div className="modal-dialog git-setup-dialog" onClick={(e) => e.stopPropagation()}>
+            <h2>Set Up Git Repository</h2>
+            <p className="git-setup-description">
+              This folder is not a Git repository. To use sync features, connect it to a GitHub repository.
+            </p>
+            <input
+              type="text"
+              className="modal-input"
+              placeholder="GitHub repository URL (https://github.com/username/repo)"
+              value={gitUrl}
+              onChange={(e) => setGitUrl(e.target.value)}
+              onKeyDown={handleGitSetupKeyDown}
+              disabled={gitSetupLoading}
+              autoFocus
+            />
+            {gitSetupError && (
+              <div className="git-setup-error">
+                {gitSetupError}
+              </div>
+            )}
+            <div className="modal-buttons">
+              <button
+                className="modal-btn cancel"
+                onClick={() => { setShowGitSetup(false); setGitUrl(''); setGitSetupError(null) }}
+                disabled={gitSetupLoading}
+              >
+                Skip for Now
+              </button>
+              <button
+                className="modal-btn submit"
+                onClick={handleGitSetup}
+                disabled={gitSetupLoading}
+              >
+                {gitSetupLoading ? 'Setting Up...' : 'Set Up Repository'}
               </button>
             </div>
           </div>

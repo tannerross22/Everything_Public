@@ -102,12 +102,17 @@ export default function Sidebar({
       const mins = String(now.getMinutes()).padStart(2, '0')
       const secs = String(now.getSeconds()).padStart(2, '0')
       const timestamp = `${year}-${month}-${day} ${hours}:${mins}:${secs}`
+      console.log('[Sidebar] Starting git sync...')
       await window.api.gitSync(vaultDir, `vault sync: ${timestamp}`)
+      console.log('[Sidebar] Git sync completed')
       // Wait a moment for git operations to fully complete
       await new Promise(resolve => setTimeout(resolve, 500))
       await refreshGitStatus()
-    } catch {
-      // Silently fail
+      console.log('[Sidebar] Git status refreshed')
+    } catch (error) {
+      console.error('[Sidebar] Sync error:', error)
+      // Still refresh status even on error
+      await refreshGitStatus()
     } finally {
       setSyncing(false)
     }
@@ -438,6 +443,7 @@ export default function Sidebar({
           onClick={onChangeVault}
           title="Change vault directory"
         >
+          <div className="folder-icon" />
           {vaultLabel}
         </button>
         {isRepo && (

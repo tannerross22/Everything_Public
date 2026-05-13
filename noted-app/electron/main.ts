@@ -18,6 +18,10 @@ import {
   gitStatus,
   gitSync,
   gitLog,
+  gitInit,
+  gitAddRemote,
+  gitGetRemoteUrl,
+  gitInitialCommit,
 } from './fileService'
 
 let mainWindow: BrowserWindow | null = null
@@ -70,6 +74,7 @@ function createWindow() {
     width: 1200,
     height: 800,
     title: 'Noted',
+    icon: path.join(__dirname, '../electron/app.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -189,6 +194,22 @@ function registerIpcHandlers() {
 
   ipcMain.handle('git:log', (_event, vaultDir: string, count: number) => {
     return gitLog(vaultDir, count)
+  })
+
+  ipcMain.handle('git:init', (_event, vaultDir: string) => {
+    return gitInit(vaultDir)
+  })
+
+  ipcMain.handle('git:addRemote', (_event, vaultDir: string, remoteName: string, remoteUrl: string) => {
+    return gitAddRemote(vaultDir, remoteName, remoteUrl)
+  })
+
+  ipcMain.handle('git:getRemoteUrl', (_event, vaultDir: string, remoteName: string = 'origin') => {
+    return gitGetRemoteUrl(vaultDir, remoteName)
+  })
+
+  ipcMain.handle('git:initialCommit', (_event, vaultDir: string, message: string) => {
+    return gitInitialCommit(vaultDir, message)
   })
 
   // Window title

@@ -262,20 +262,57 @@ export function isGitRepo(vaultDir: string): Promise<boolean> {
 export function gitStatus(vaultDir: string): Promise<string> {
   return new Promise((resolve, reject) => {
     execFile('git', ['status', '--porcelain'], { cwd: vaultDir }, (err, stdout) => {
-      if (err) reject(err)
-      else resolve(stdout)
+      if (err) {
+        console.error(`[gitStatus] Error:`, err)
+        reject(err)
+      } else {
+        console.log(`[gitStatus] Current status:\n${stdout || '(no changes)'}`)
+        resolve(stdout)
+      }
     })
   })
 }
 
 export function gitSync(vaultDir: string, message: string): Promise<string> {
   return new Promise((resolve, reject) => {
-    execFile('git', ['add', '-A'], { cwd: vaultDir }, (err) => {
-      if (err) return reject(err)
-      execFile('git', ['commit', '-m', message], { cwd: vaultDir }, (err2) => {
-        if (err2) return reject(err2)
-        execFile('git', ['push'], { cwd: vaultDir }, (err3) => {
-          if (err3) return reject(err3)
+    console.log(`[gitSync] ========== STARTING SYNC ==========`)
+    console.log(`[gitSync] Vault: ${vaultDir}`)
+    console.log(`[gitSync] Message: ${message}`)
+
+    execFile('git', ['add', '-A'], { cwd: vaultDir }, (err, stdout, stderr) => {
+      console.log(`[gitSync] git add -A completed`)
+      console.log(`[gitSync]   stdout: "${stdout}"`)
+      console.log(`[gitSync]   stderr: "${stderr}"`)
+      if (err) {
+        console.error(`[gitSync] Error in git add:`, err.message)
+        return reject(err)
+      }
+
+      console.log(`[gitSync] >>> Files staged, creating commit...`)
+
+      execFile('git', ['commit', '-m', message], { cwd: vaultDir }, (err2, stdout2, stderr2) => {
+        console.log(`[gitSync] git commit completed`)
+        console.log(`[gitSync]   stdout: "${stdout2}"`)
+        console.log(`[gitSync]   stderr: "${stderr2}"`)
+        if (err2) {
+          console.error(`[gitSync] Error in git commit:`, err2.message)
+          return reject(err2)
+        }
+
+        console.log(`[gitSync] >>> Commit created, pushing to remote...`)
+
+        // Try with --set-upstream first (for initial push), fall back to regular push
+        execFile('git', ['push', '-u', 'origin', 'master', '-v'], { cwd: vaultDir }, (err3, stdout3, stderr3) => {
+          console.log(`[gitSync] git push -v completed`)
+          console.log(`[gitSync]   stdout: "${stdout3}"`)
+          console.log(`[gitSync]   stderr: "${stderr3}"`)
+          if (err3) {
+            console.error(`[gitSync] Error in git push:`, err3.message)
+            console.error(`[gitSync]   Full error:`, err3)
+            return reject(err3)
+          }
+
+          console.log(`[gitSync] ========== SYNC SUCCESSFUL! ==========`)
           resolve('Synced successfully')
         })
       })
@@ -288,6 +325,84 @@ export function gitLog(vaultDir: string, count: number = 10): Promise<string> {
     execFile('git', ['log', '--oneline', `-${count}`], { cwd: vaultDir }, (err, stdout) => {
       if (err) reject(err)
       else resolve(stdout)
+    })
+  })
+}
+
+// Initialize a new git repository
+export function gitInit(vaultDir: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    console.log(`[gitInit] Initializing git repo at: ${vaultDir}`)
+    execFile('git', ['init'], { cwd: vaultDir }, (err, stdout) => {
+      if (err) {
+        console.error(`[gitInit] Error:`, err)
+        reject(err)
+      } else {
+        console.log(`[gitInit] Success:`, stdout)
+        resolve(stdout)
+      }
+    })
+  })
+}
+
+// Add a remote to the repository
+export function gitAddRemote(vaultDir: string, remoteName: string, remoteUrl: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    console.log(`[gitAddRemote] Adding remote "${remoteName}" to: ${vaultDir}`)
+    console.log(`[gitAddRemote] Remote URL: ${remoteUrl}`)
+    execFile('git', ['remote', 'add', remoteName, remoteUrl], { cwd: vaultDir }, (err) => {
+      if (err) {
+        console.error(`[gitAddRemote] Error:`, err)
+        reject(err)
+      } else {
+        console.log(`[gitAddRemote] Success`)
+        resolve('Remote added successfully')
+      }
+    })
+  })
+}
+
+// Get the remote URL
+export function gitGetRemoteUrl(vaultDir: string, remoteName: string = 'origin'): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile('git', ['config', '--get', `remote.${remoteName}.url`], { cwd: vaultDir }, (err, stdout) => {
+      if (err) reject(err)
+      else resolve(stdout.trim())
+    })
+  })
+}
+
+// Create initial commit with a message
+export function gitInitialCommit(vaultDir: string, message: string = 'Initial commit'): Promise<string> {
+  return new Promise((resolve, reject) => {
+    console.log(`[gitInitialCommit] Creating initial commit in: ${vaultDir}`)
+    console.log(`[gitInitialCommit] Message: ${message}`)
+
+    // First add all files
+    execFile('git', ['add', '-A'], { cwd: vaultDir }, (err1) => {
+      if (err1) {
+        console.error(`[gitInitialCommit] Error in git add:`, err1)
+        return reject(err1)
+      }
+
+      console.log(`[gitInitialCommit] Files staged, creating commit...`)
+
+      // Check if there's anything to commit
+      execFile('git', ['commit', '-m', message], { cwd: vaultDir }, (err2, stdout, stderr) => {
+        // If there's nothing to commit, that's fine
+        if (err2 && err2.message?.includes('nothing to commit')) {
+          console.log(`[gitInitialCommit] No files to commit`)
+          resolve('No files to commit')
+        } else if (err2) {
+          console.error(`[gitInitialCommit] Error in git commit:`, err2)
+          console.error(`[gitInitialCommit] stderr:`, stderr)
+          reject(err2)
+        } else {
+          console.log(`[gitInitialCommit] Commit created successfully`)
+          console.log(`[gitInitialCommit] stdout:`, stdout)
+          resolve('Initial commit created')
+        }
+      })
     })
   })
 }

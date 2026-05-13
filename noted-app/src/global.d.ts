@@ -26,10 +26,15 @@ declare global {
       onFilesChanged: (callback: () => void) => () => void
 
       // Git operations
+      isGitRepo: (vaultDir: string) => Promise<boolean>
       gitIsRepo: (vaultDir: string) => Promise<boolean>
       gitStatus: (vaultDir: string) => Promise<string>
       gitSync: (vaultDir: string, message: string) => Promise<string>
       gitLog: (vaultDir: string, count: number) => Promise<string>
+      gitInit: (vaultDir: string) => Promise<string>
+      gitAddRemote: (vaultDir: string, remoteName: string, remoteUrl: string) => Promise<string>
+      gitGetRemoteUrl: (vaultDir: string, remoteName?: string) => Promise<string>
+      gitInitialCommit: (vaultDir: string, message: string) => Promise<string>
 
       // Window
       setTitle: (title: string) => Promise<void>

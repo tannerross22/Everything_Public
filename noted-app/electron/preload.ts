@@ -25,10 +25,15 @@ contextBridge.exposeInMainWorld('api', {
   },
 
   // Git operations
+  isGitRepo: (vaultDir: string): Promise<boolean> => ipcRenderer.invoke('git:isRepo', vaultDir),
   gitIsRepo: (vaultDir: string): Promise<boolean> => ipcRenderer.invoke('git:isRepo', vaultDir),
   gitStatus: (vaultDir: string): Promise<string> => ipcRenderer.invoke('git:status', vaultDir),
   gitSync: (vaultDir: string, message: string): Promise<string> => ipcRenderer.invoke('git:sync', vaultDir, message),
   gitLog: (vaultDir: string, count: number): Promise<string> => ipcRenderer.invoke('git:log', vaultDir, count),
+  gitInit: (vaultDir: string): Promise<string> => ipcRenderer.invoke('git:init', vaultDir),
+  gitAddRemote: (vaultDir: string, remoteName: string, remoteUrl: string): Promise<string> => ipcRenderer.invoke('git:addRemote', vaultDir, remoteName, remoteUrl),
+  gitGetRemoteUrl: (vaultDir: string, remoteName?: string): Promise<string> => ipcRenderer.invoke('git:getRemoteUrl', vaultDir, remoteName || 'origin'),
+  gitInitialCommit: (vaultDir: string, message: string): Promise<string> => ipcRenderer.invoke('git:initialCommit', vaultDir, message),
 
   // Window
   setTitle: (title: string) => ipcRenderer.invoke('window:setTitle', title),

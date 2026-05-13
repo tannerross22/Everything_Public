@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "build:electron": "tsc -p tsconfig.json",
+    "dist": "npm run build && npm run build:electron && electron-builder",
     "preview": "vite preview"
   },
   "keywords": [],
@@ -34,10 +36,41 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
     "electron": "^42.0.1",
+    "electron-builder": "^25.1.8",
     "esbuild": "^0.28.0",
     "typescript": "^6.0.3",
     "vite": "^8.0.12",
     "vite-plugin-electron": "^0.29.1",
     "vite-plugin-electron-renderer": "^0.14.7"
+  },
+  "build": {
+    "appId": "com.noted.app",
+    "productName": "Noted",
+    "files": [
+      "dist",
+      "dist-electron",
+      "node_modules",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        "portable"
+      ],
+      "icon": "electron/app.png",
+      "sign": null
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Noted"
+    }
   }
 }
