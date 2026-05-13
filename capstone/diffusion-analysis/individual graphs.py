@@ -14,7 +14,7 @@ csv_files = {
     "S8": "S8 - raw.csv",
 }
 
-fe_powder_baseline = 0.035
+fe_powder_baseline = 0.0305
 num_start_points = 1
 num_end_points = 5
 # =================================================
