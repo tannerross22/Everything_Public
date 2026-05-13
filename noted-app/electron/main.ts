@@ -4,11 +4,14 @@ import fs from 'fs'
 import { watch, type FSWatcher } from 'chokidar'
 import {
   listNotes,
+  buildFileTree,
   readNote,
   writeNote,
   createNote,
   deleteNote,
   renameNote,
+  createFolder,
+  moveNote,
   isGitRepo,
   gitStatus,
   gitSync,
@@ -44,9 +47,10 @@ function startWatcher(vaultDir: string) {
     fileWatcher.close()
   }
 
-  fileWatcher = watch(path.join(vaultDir, '*.md'), {
+  fileWatcher = watch(path.join(vaultDir, '**/*.md'), {
     ignoreInitial: true,
     awaitWriteFinish: { stabilityThreshold: 300 },
+    ignored: ['**/node_modules/**', '**/dist/**', '**/dist-electron/**', '**/.git/**'],
   })
 
   fileWatcher.on('all', () => {
@@ -110,6 +114,18 @@ function registerIpcHandlers() {
   // File operations
   ipcMain.handle('vault:list', (_event, vaultDir: string) => {
     return listNotes(vaultDir)
+  })
+
+  ipcMain.handle('vault:tree', (_event, vaultDir: string) => {
+    return buildFileTree(vaultDir)
+  })
+
+  ipcMain.handle('vault:createFolder', (_event, folderPath: string) => {
+    return createFolder(folderPath)
+  })
+
+  ipcMain.handle('vault:moveNote', (_event, oldPath: string, newFolderPath: string) => {
+    return moveNote(oldPath, newFolderPath)
   })
 
   ipcMain.handle('vault:read', (_event, filePath: string) => {

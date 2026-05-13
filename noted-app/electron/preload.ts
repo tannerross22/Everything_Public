@@ -7,11 +7,14 @@ contextBridge.exposeInMainWorld('api', {
 
   // File operations
   listNotes: (vaultDir: string) => ipcRenderer.invoke('vault:list', vaultDir),
+  buildFileTree: (vaultDir: string) => ipcRenderer.invoke('vault:tree', vaultDir),
   readNote: (filePath: string): Promise<string> => ipcRenderer.invoke('vault:read', filePath),
   writeNote: (filePath: string, content: string) => ipcRenderer.invoke('vault:write', filePath, content),
   createNote: (vaultDir: string, name: string): Promise<string> => ipcRenderer.invoke('vault:create', vaultDir, name),
   deleteNote: (filePath: string) => ipcRenderer.invoke('vault:delete', filePath),
   renameNote: (vaultDir: string, oldPath: string, newName: string): Promise<{ newPath: string; updatedCount: number }> => ipcRenderer.invoke('vault:rename', vaultDir, oldPath, newName),
+  createFolder: (folderPath: string): Promise<string> => ipcRenderer.invoke('vault:createFolder', folderPath),
+  moveNote: (oldPath: string, newFolderPath: string): Promise<string> => ipcRenderer.invoke('vault:moveNote', oldPath, newFolderPath),
 
   // File watcher events
   onFilesChanged: (callback: () => void) => {

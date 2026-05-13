@@ -8,28 +8,94 @@ export interface NoteFileData {
   modifiedAt: number
 }
 
+export interface FileTreeNode {
+  name: string
+  type: 'file' | 'folder'
+  path: string
+  children?: FileTreeNode[]
+  modifiedAt?: number
+}
+
 /**
- * List all .md files in the vault directory (non-recursive for now)
+ * List all .md files in the vault directory (flat list for backward compatibility)
  */
 export function listNotes(vaultDir: string): NoteFileData[] {
   if (!fs.existsSync(vaultDir)) return []
 
-  const entries = fs.readdirSync(vaultDir, { withFileTypes: true })
   const notes: NoteFileData[] = []
 
-  for (const entry of entries) {
-    if (entry.isFile() && entry.name.endsWith('.md')) {
-      const fullPath = path.join(vaultDir, entry.name)
-      const stat = fs.statSync(fullPath)
-      notes.push({
-        name: entry.name.replace(/\.md$/, ''),
-        path: fullPath,
-        modifiedAt: stat.mtimeMs,
-      })
+  // Recursively find all .md files
+  function walkDir(dir: string) {
+    const entries = fs.readdirSync(dir, { withFileTypes: true })
+
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry.name)
+
+      if (entry.isFile() && entry.name.endsWith('.md')) {
+        const stat = fs.statSync(fullPath)
+        notes.push({
+          name: entry.name.replace(/\.md$/, ''),
+          path: fullPath,
+          modifiedAt: stat.mtimeMs,
+        })
+      } else if (entry.isDirectory() && !entry.name.startsWith('.') && entry.name !== 'node_modules' && entry.name !== 'dist' && entry.name !== 'dist-electron') {
+        walkDir(fullPath)
+      }
     }
   }
 
+  walkDir(vaultDir)
   return notes.sort((a, b) => b.modifiedAt - a.modifiedAt)
+}
+
+/**
+ * Build a file tree structure (folders and notes) for the sidebar
+ */
+export function buildFileTree(vaultDir: string): FileTreeNode[] {
+  if (!fs.existsSync(vaultDir)) return []
+
+  function walkDir(dir: string): FileTreeNode[] {
+    const entries = fs.readdirSync(dir, { withFileTypes: true })
+    const nodes: FileTreeNode[] = []
+
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry.name)
+
+      // Skip hidden and system files/folders
+      if (entry.name.startsWith('.') || entry.name === 'node_modules' || entry.name === 'dist' || entry.name === 'dist-electron') {
+        continue
+      }
+
+      if (entry.isFile() && entry.name.endsWith('.md')) {
+        const stat = fs.statSync(fullPath)
+        nodes.push({
+          name: entry.name.replace(/\.md$/, ''),
+          type: 'file',
+          path: fullPath,
+          modifiedAt: stat.mtimeMs,
+        })
+      } else if (entry.isDirectory()) {
+        const children = walkDir(fullPath)
+        if (children.length > 0) {
+          nodes.push({
+            name: entry.name,
+            type: 'folder',
+            path: fullPath,
+            children,
+          })
+        }
+      }
+    }
+
+    // Sort: folders first, then files by modification time
+    return nodes.sort((a, b) => {
+      if (a.type !== b.type) return a.type === 'folder' ? -1 : 1
+      if (a.type === 'file') return (b.modifiedAt || 0) - (a.modifiedAt || 0)
+      return a.name.localeCompare(b.name)
+    })
+  }
+
+  return walkDir(vaultDir)
 }
 
 /**
@@ -76,6 +142,33 @@ export function deleteNote(filePath: string): void {
   if (fs.existsSync(filePath)) {
     fs.unlinkSync(filePath)
   }
+}
+
+/**
+ * Create a new folder
+ */
+export function createFolder(folderPath: string): string {
+  if (!fs.existsSync(folderPath)) {
+    fs.mkdirSync(folderPath, { recursive: true })
+  }
+  return folderPath
+}
+
+/**
+ * Move a note to a different folder
+ */
+export function moveNote(oldPath: string, newFolderPath: string): string {
+  const fileName = path.basename(oldPath)
+  const newPath = path.join(newFolderPath, fileName)
+
+  // Ensure destination folder exists
+  if (!fs.existsSync(newFolderPath)) {
+    fs.mkdirSync(newFolderPath, { recursive: true })
+  }
+
+  // Move the file
+  fs.renameSync(oldPath, newPath)
+  return newPath
 }
 
 /**
@@ -143,7 +236,7 @@ export function gitStatus(vaultDir: string): Promise<string> {
 
 export function gitSync(vaultDir: string, message: string): Promise<string> {
   return new Promise((resolve, reject) => {
-    execFile('git', ['add', '-A'], { cwd: vaultDir }, (err) => {
+    execFile('git', ['add', '-A', '--', ':(glob)**/*.md'], { cwd: vaultDir }, (err) => {
       if (err) return reject(err)
       execFile('git', ['commit', '-m', message], { cwd: vaultDir }, (err2) => {
         if (err2) return reject(err2)

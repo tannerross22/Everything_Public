@@ -68,8 +68,8 @@ function App() {
       <Sidebar
         notes={notes}
         activeNotePath={activeNote?.path || null}
-        onOpenNote={(path) => {
-          openNote(path)
+        onOpenNote={async (path) => {
+          await openNote(path)
           setViewMode('editor')
         }}
         onCreateNote={createNewNote}
@@ -148,8 +148,8 @@ function App() {
       {/* Search overlay */}
       <SearchBar
         notes={notes}
-        onOpenNote={(path) => {
-          openNote(path)
+        onOpenNote={async (path) => {
+          await openNote(path)
           setViewMode('editor')
         }}
         visible={searchVisible}

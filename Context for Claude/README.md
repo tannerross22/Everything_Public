@@ -56,6 +56,15 @@ related_files:
 
 ## Quick Links
 
-- [5DOF Flight Simulation](5DOF%20Flight/Rocket_Flight_Simulation.md) — Hybrid rocket dynamics, Monte Carlo analysis, flight design optimization
-- [API 571 Damage Mechanisms](Industry Standards/API_571_Damage_Mechanisms.md) — Engineering standards for pressure equipment
-- [Noted App Bugs](Noted_App_Bugs.md) — Bug tracker for the Noted electron app (Obsidian-like PKM)
+* [5DOF Flight Simulation](5DOF%20Flight/Rocket_Flight_Simulation.md) — Hybrid rocket dynamics, Monte Carlo analysis, flight design optimization
+
+* \[API 571 Damage Mechanisms]\(Industry Standards/API\_571\_Damage\_Mechanisms.md) — Engineering standards for pressure equipment
+
+* [Noted App Bugs](Noted_App_Bugs.md) — Bug tracker for the Noted electron app (Obsidian-like PKM)
+
+<br />
+
+<br />
+
+<br />
+

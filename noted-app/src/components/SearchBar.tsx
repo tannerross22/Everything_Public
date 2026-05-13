@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import type { NoteFile } from '../types'
 
 interface SearchBarProps {
@@ -18,6 +18,7 @@ export default function SearchBar({ notes, onOpenNote, visible, onClose }: Searc
   const [results, setResults] = useState<SearchResult[]>([])
   const [selectedIndex, setSelectedIndex] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     if (visible) {
@@ -28,23 +29,7 @@ export default function SearchBar({ notes, onOpenNote, visible, onClose }: Searc
     }
   }, [visible, notes])
 
-  const handleSearch = async (value: string) => {
-    setQuery(value)
-    setSelectedIndex(0)
-
-    if (!value.trim()) {
-      setResults(notes.map((n) => ({ note: n })))
-      return
-    }
-
-    const q = value.toLowerCase()
-
-    // Name matches first
-    const nameMatches: SearchResult[] = notes
-      .filter((n) => n.name.toLowerCase().includes(q))
-      .map((n) => ({ note: n }))
-
-    // Content search
+  const searchContent = useCallback(async (q: string, nameMatches: SearchResult[]) => {
     const contentMatches: SearchResult[] = []
     for (const note of notes) {
       if (nameMatches.some((m) => m.note.path === note.path)) continue
@@ -62,8 +47,31 @@ export default function SearchBar({ notes, onOpenNote, visible, onClose }: Searc
         }
       } catch {}
     }
-
     setResults([...nameMatches, ...contentMatches])
+  }, [notes])
+
+  const handleSearch = (value: string) => {
+    setQuery(value)
+    setSelectedIndex(0)
+
+    if (!value.trim()) {
+      setResults(notes.map((n) => ({ note: n })))
+      return
+    }
+
+    const q = value.toLowerCase()
+
+    const nameMatches: SearchResult[] = notes
+      .filter((n) => n.name.toLowerCase().includes(q))
+      .map((n) => ({ note: n }))
+
+    // Show name matches immediately, debounce content search
+    setResults(nameMatches)
+
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(() => {
+      searchContent(q, nameMatches)
+    }, 250)
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {

@@ -54,8 +54,14 @@ export default function GitPanel({ vaultDir }: GitPanelProps) {
       const errMsg = err?.message || String(err)
       if (errMsg.includes('nothing to commit')) {
         setMessage({ text: 'Already up to date', type: 'success' })
+      } else if (errMsg.includes('push') && errMsg.includes('http')) {
+        setMessage({ text: 'Push failed: Check git credentials/remote URL', type: 'error' })
+      } else if (errMsg.includes('ENOTFOUND')) {
+        setMessage({ text: 'Network error: Check internet connection', type: 'error' })
       } else {
-        setMessage({ text: `Sync failed: ${errMsg.slice(0, 80)}`, type: 'error' })
+        // Show first 60 chars of error, truncated nicely
+        const shortErr = errMsg.length > 60 ? errMsg.slice(0, 60) + '...' : errMsg
+        setMessage({ text: `Sync failed: ${shortErr}`, type: 'error' })
       }
     } finally {
       setSyncing(false)

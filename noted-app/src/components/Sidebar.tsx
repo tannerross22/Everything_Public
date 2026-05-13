@@ -7,7 +7,7 @@ interface SidebarProps {
   notes: NoteFile[]
   activeNotePath: string | null
   activeNoteName: string | null
-  onOpenNote: (path: string) => void
+  onOpenNote: (path: string) => void | Promise<void>
   onCreateNote: (name: string) => void
   onDeleteNote?: () => void
   onChangeVault: () => void
@@ -56,10 +56,10 @@ export default function Sidebar({
     }
   }
 
-  const handleContextMenuDelete = () => {
+  const handleContextMenuDelete = async () => {
     if (contextMenu && onDeleteNote) {
       if (confirm(`Delete "${contextMenu.note.name}"?`)) {
-        onOpenNote(contextMenu.note.path)
+        await onOpenNote(contextMenu.note.path)
         onDeleteNote()
       }
     }

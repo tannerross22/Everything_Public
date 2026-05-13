@@ -11,11 +11,14 @@ declare global {
 
       // File operations
       listNotes: (vaultDir: string) => Promise<NoteFile[]>
+      buildFileTree: (vaultDir: string) => Promise<any[]>
       readNote: (filePath: string) => Promise<string>
       writeNote: (filePath: string, content: string) => Promise<void>
       createNote: (vaultDir: string, name: string) => Promise<string>
       deleteNote: (filePath: string) => Promise<void>
       renameNote: (vaultDir: string, oldPath: string, newName: string) => Promise<{ newPath: string; updatedCount: number }>
+      createFolder: (folderPath: string) => Promise<string>
+      moveNote: (oldPath: string, newFolderPath: string) => Promise<string>
 
       // File watcher events
       onFilesChanged: (callback: () => void) => () => void

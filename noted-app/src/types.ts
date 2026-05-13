@@ -19,3 +19,11 @@ export interface GraphLink {
   source: string
   target: string
 }
+
+export interface FileTreeNode {
+  name: string                   // filename or folder name
+  type: 'file' | 'folder'       // whether it's a file or folder
+  path: string                   // absolute path
+  children?: FileTreeNode[]      // for folders, contains children
+  modifiedAt?: number           // for files, modification time
+}

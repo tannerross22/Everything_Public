@@ -282,10 +282,15 @@ body {
   flex: 1;
   overflow-y: auto;
   padding: 0;
+  display: flex;
+  flex-direction: column;
+  cursor: text;
 }
 
 .milkdown-wrapper {
-  min-height: 100%;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
 }
 
 /* Override Milkdown/Nord theme for dark mode */
@@ -293,13 +298,17 @@ body {
   background: var(--bg-primary) !important;
   color: var(--text-primary) !important;
   padding: 24px 48px !important;
-  min-height: 100%;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
   font-size: 1rem;
   line-height: 1.7;
 }
 
-.milkdown .editor {
+.milkdown .editor,
+.milkdown .ProseMirror {
   outline: none !important;
+  flex: 1;
 }
 
 .milkdown h1 {
