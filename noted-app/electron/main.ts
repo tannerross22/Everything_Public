@@ -8,6 +8,7 @@ import {
   writeNote,
   createNote,
   deleteNote,
+  renameNote,
   isGitRepo,
   gitStatus,
   gitSync,
@@ -133,6 +134,13 @@ function registerIpcHandlers() {
     isWriting = true
     deleteNote(filePath)
     setTimeout(() => { isWriting = false }, 200)
+  })
+
+  ipcMain.handle('vault:rename', (_event, vaultDir: string, oldPath: string, newName: string) => {
+    isWriting = true
+    const result = renameNote(vaultDir, oldPath, newName)
+    setTimeout(() => { isWriting = false }, 200)
+    return result
   })
 
   // Git operations

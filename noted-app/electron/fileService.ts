@@ -78,6 +78,50 @@ export function deleteNote(filePath: string): void {
   }
 }
 
+/**
+ * Rename a note and update all [[references]] in other notes
+ */
+export function renameNote(vaultDir: string, oldPath: string, newName: string): { newPath: string; updatedCount: number } {
+  const oldNameWithoutExt = path.basename(oldPath, '.md')
+  const newPath = path.join(path.dirname(oldPath), `${newName}.md`)
+
+  // Rename the file
+  fs.renameSync(oldPath, newPath)
+
+  // Update all references in other notes
+  let updatedCount = 0
+  const notes = listNotes(vaultDir)
+
+  // Simple regex to find [[linkText]] patterns
+  const linkRegex = /\[\[([^\]]+)\]\]/g
+
+  for (const note of notes) {
+    // Skip the renamed note itself
+    if (note.path === newPath) continue
+
+    const content = readNote(note.path)
+    let newContent = content
+    let hasChanges = false
+
+    // Replace all references to the old name with the new name
+    newContent = newContent.replace(linkRegex, (match, linkText) => {
+      if (linkText === oldNameWithoutExt) {
+        hasChanges = true
+        updatedCount++
+        return `[[${newName}]]`
+      }
+      return match
+    })
+
+    // Write back if there were changes
+    if (hasChanges) {
+      writeNote(note.path, newContent)
+    }
+  }
+
+  return { newPath, updatedCount }
+}
+
 // ── Git operations ──
 
 export function isGitRepo(vaultDir: string): Promise<boolean> {

@@ -18,6 +18,7 @@ function App() {
     createNewNote,
     deleteCurrentNote,
     changeVaultDir,
+    renameNote,
     resolveLink,
   } = useVault()
 
@@ -74,6 +75,7 @@ function App() {
         onCreateNote={createNewNote}
         onDeleteNote={activeNote ? deleteCurrentNote : undefined}
         onChangeVault={changeVaultDir}
+        onRenameNote={renameNote}
         vaultDir={vaultDir}
         activeNoteName={activeNote?.name || null}
       />

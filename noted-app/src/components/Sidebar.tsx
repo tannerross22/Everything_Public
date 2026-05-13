@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { NoteFile } from '../types'
 import GitPanel from './GitPanel'
+import NoteContextMenu from './NoteContextMenu'
 
 interface SidebarProps {
   notes: NoteFile[]
@@ -10,6 +11,7 @@ interface SidebarProps {
   onCreateNote: (name: string) => void
   onDeleteNote?: () => void
   onChangeVault: () => void
+  onRenameNote?: (oldPath: string, newName: string) => Promise<any>
   vaultDir: string
 }
 
@@ -21,10 +23,14 @@ export default function Sidebar({
   onCreateNote,
   onDeleteNote,
   onChangeVault,
+  onRenameNote,
   vaultDir,
 }: SidebarProps) {
   const [isCreating, setIsCreating] = useState(false)
   const [newNoteName, setNewNoteName] = useState('')
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; note: NoteFile } | null>(null)
+  const [renamingPath, setRenamingPath] = useState<string | null>(null)
+  const [renameValue, setRenameValue] = useState('')
 
   const handleCreate = () => {
     if (newNoteName.trim()) {
@@ -48,6 +54,56 @@ export default function Sidebar({
         onDeleteNote()
       }
     }
+  }
+
+  const handleContextMenuDelete = () => {
+    if (contextMenu && onDeleteNote) {
+      if (confirm(`Delete "${contextMenu.note.name}"?`)) {
+        onOpenNote(contextMenu.note.path)
+        onDeleteNote()
+      }
+    }
+  }
+
+  const handleContextMenuRename = () => {
+    if (contextMenu) {
+      setRenamingPath(contextMenu.note.path)
+      setRenameValue(contextMenu.note.name)
+    }
+  }
+
+  const handleRenameConfirm = async (oldPath: string, newName: string) => {
+    if (!newName.trim()) {
+      setRenamingPath(null)
+      return
+    }
+    try {
+      if (onRenameNote) {
+        const result = await onRenameNote(oldPath, newName)
+        // Show success message (could add toast notification here)
+        console.log(`Renamed to "${newName}" and updated ${result.updatedCount} references`)
+      }
+    } catch (error) {
+      console.error('Failed to rename note:', error)
+    } finally {
+      setRenamingPath(null)
+    }
+  }
+
+  const handleRenameKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      if (renamingPath) {
+        handleRenameConfirm(renamingPath, renameValue)
+      }
+    } else if (e.key === 'Escape') {
+      setRenamingPath(null)
+    }
+  }
+
+  const handleContextMenu = (e: React.MouseEvent, note: NoteFile) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setContextMenu({ x: e.clientX, y: e.clientY, note })
   }
 
   // Show just the last folder name for the vault path
@@ -96,15 +152,32 @@ export default function Sidebar({
 
       <div className="sidebar-notes">
         {notes.map((note) => (
-          <div
-            key={note.path}
-            className={`sidebar-note ${note.path === activeNotePath ? 'active' : ''}`}
-            onClick={() => onOpenNote(note.path)}
-          >
-            <span className="note-name">{note.name}</span>
-            <span className="note-date">
-              {new Date(note.modifiedAt).toLocaleDateString()}
-            </span>
+          <div key={note.path}>
+            {renamingPath === note.path ? (
+              <div className="sidebar-note-rename">
+                <input
+                  type="text"
+                  value={renameValue}
+                  onChange={(e) => setRenameValue(e.target.value)}
+                  onKeyDown={handleRenameKeyDown}
+                  onBlur={() => handleRenameConfirm(note.path, renameValue)}
+                  placeholder="Note name..."
+                  autoFocus
+                  className="sidebar-input"
+                />
+              </div>
+            ) : (
+              <div
+                className={`sidebar-note ${note.path === activeNotePath ? 'active' : ''}`}
+                onClick={() => onOpenNote(note.path)}
+                onContextMenu={(e) => handleContextMenu(e, note)}
+              >
+                <span className="note-name">{note.name}</span>
+                <span className="note-date">
+                  {new Date(note.modifiedAt).toLocaleDateString()}
+                </span>
+              </div>
+            )}
           </div>
         ))}
         {notes.length === 0 && (
@@ -121,6 +194,17 @@ export default function Sidebar({
           {vaultLabel}
         </button>
       </div>
+
+      {contextMenu && (
+        <NoteContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          note={contextMenu.note}
+          onDelete={handleContextMenuDelete}
+          onRename={handleContextMenuRename}
+          onClose={() => setContextMenu(null)}
+        />
+      )}
     </div>
   )
 }

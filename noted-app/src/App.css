@@ -99,6 +99,10 @@ body {
   border-color: var(--accent);
 }
 
+.sidebar-note-rename {
+  padding: 6px 12px;
+}
+
 .sidebar-notes {
   flex: 1;
   overflow-y: auto;
@@ -106,12 +110,13 @@ body {
 }
 
 .sidebar-note {
-  padding: 10px 16px;
+  padding: 6px 12px;
   cursor: pointer;
   display: flex;
   flex-direction: column;
   gap: 2px;
   transition: background 0.15s;
+  user-select: none;
 }
 
 .sidebar-note:hover {
@@ -124,13 +129,13 @@ body {
 }
 
 .note-name {
-  font-size: 0.9rem;
+  font-size: 13px;
   color: var(--text-primary);
   font-weight: 500;
 }
 
 .note-date {
-  font-size: 0.75rem;
+  font-size: 11px;
   color: var(--text-dim);
 }
 
@@ -675,6 +680,39 @@ kbd {
   font-size: 0.8rem;
   color: var(--text-secondary);
   margin-right: 6px;
+}
+
+/* ── Context Menu ── */
+.context-menu {
+  position: fixed;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  z-index: 1000;
+  min-width: 150px;
+  overflow: hidden;
+}
+
+.context-menu-item {
+  padding: 8px 16px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-primary);
+  transition: background 0.15s;
+  user-select: none;
+}
+
+.context-menu-item:hover {
+  background: var(--bg-surface);
+}
+
+.context-menu-item.danger {
+  color: var(--error);
+}
+
+.context-menu-item.danger:hover {
+  background: rgba(243, 139, 168, 0.15);
 }
 
 /* ── Scrollbar ── */

@@ -7,7 +7,6 @@ interface GitPanelProps {
 export default function GitPanel({ vaultDir }: GitPanelProps) {
   const [isRepo, setIsRepo] = useState(false)
   const [changedCount, setChangedCount] = useState(0)
-  const [recentCommits, setRecentCommits] = useState<string[]>([])
   const [syncing, setSyncing] = useState(false)
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null)
   const [expanded, setExpanded] = useState(false)
@@ -21,9 +20,6 @@ export default function GitPanel({ vaultDir }: GitPanelProps) {
         const status = await window.api.gitStatus(vaultDir)
         const lines = status.trim().split('\n').filter((l: string) => l.trim())
         setChangedCount(lines.length)
-
-        const log = await window.api.gitLog(vaultDir, 5)
-        setRecentCommits(log.trim().split('\n').filter((l: string) => l.trim()))
       }
     } catch {
       setIsRepo(false)
@@ -42,7 +38,15 @@ export default function GitPanel({ vaultDir }: GitPanelProps) {
     setSyncing(true)
     setMessage(null)
     try {
-      const timestamp = new Date().toISOString().replace('T', ' ').slice(0, 19)
+      // Format timestamp safely: YYYY-MM-DD HH:MM:SS
+      const now = new Date()
+      const year = now.getFullYear()
+      const month = String(now.getMonth() + 1).padStart(2, '0')
+      const day = String(now.getDate()).padStart(2, '0')
+      const hours = String(now.getHours()).padStart(2, '0')
+      const mins = String(now.getMinutes()).padStart(2, '0')
+      const secs = String(now.getSeconds()).padStart(2, '0')
+      const timestamp = `${year}-${month}-${day} ${hours}:${mins}:${secs}`
       await window.api.gitSync(vaultDir, `vault sync: ${timestamp}`)
       setMessage({ text: 'Synced successfully!', type: 'success' })
       await refreshStatus()
@@ -94,17 +98,6 @@ export default function GitPanel({ vaultDir }: GitPanelProps) {
           {message && (
             <div className={`git-message ${message.type}`}>
               {message.text}
-            </div>
-          )}
-
-          {recentCommits.length > 0 && (
-            <div className="git-commits">
-              <div className="git-commits-label">Recent commits</div>
-              {recentCommits.map((commit, i) => (
-                <div key={i} className="git-commit">
-                  {commit}
-                </div>
-              ))}
             </div>
           )}
         </div>

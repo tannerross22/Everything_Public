@@ -15,6 +15,7 @@ declare global {
       writeNote: (filePath: string, content: string) => Promise<void>
       createNote: (vaultDir: string, name: string) => Promise<string>
       deleteNote: (filePath: string) => Promise<void>
+      renameNote: (vaultDir: string, oldPath: string, newName: string) => Promise<{ newPath: string; updatedCount: number }>
 
       // File watcher events
       onFilesChanged: (callback: () => void) => () => void

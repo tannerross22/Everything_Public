@@ -94,6 +94,23 @@ export function useVault() {
     }
   }, [])
 
+  // Rename a note and update all references
+  const renameNote = useCallback(async (oldPath: string, newName: string) => {
+    if (!vaultDir || !newName.trim()) return
+    try {
+      const result = await window.api.renameNote(vaultDir, oldPath, newName)
+      // If this was the active note, update it
+      if (activeNote?.path === oldPath) {
+        setActiveNote((prev) => prev ? { ...prev, path: result.newPath, name: newName } : null)
+      }
+      await refreshNotes()
+      return result
+    } catch (error) {
+      console.error('Failed to rename note:', error)
+      throw error
+    }
+  }, [vaultDir, activeNote?.path, refreshNotes])
+
   // Resolve a wiki link — find note by name or create it
   const resolveLink = useCallback(async (linkName: string) => {
     const match = notes.find(
@@ -115,6 +132,7 @@ export function useVault() {
     createNewNote,
     deleteCurrentNote,
     changeVaultDir,
+    renameNote,
     resolveLink,
     refreshNotes,
   }
