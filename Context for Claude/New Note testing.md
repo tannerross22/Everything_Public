@@ -17,5 +17,7 @@ Implementing pictures works like a charm too.
 
 <br />
 
+Why doesn't this sync work anymore? 
 
+-Need to add a swirly little icon that shows that it's trying to wait for sync to happen.
 
