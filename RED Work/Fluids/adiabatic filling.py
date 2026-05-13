@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 # Constants
-gamma = 1.4  # Specific heat ratio for air
+gamma = 1.2  # Specific heat ratio for air
 R = 287  # Specific gas constant for air in J/kg.K
 C_p = gamma * R / (gamma - 1)  # Specific heat capacity at constant pressure
 V = 0.007  # Volume of the receiving container in cubic meters
