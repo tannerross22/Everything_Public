@@ -301,9 +301,10 @@ export function gitSync(vaultDir: string, message: string): Promise<string> {
 
         console.log(`[gitSync] >>> Commit created, pushing to remote...`)
 
-        // Try with --set-upstream first (for initial push), fall back to regular push
-        execFile('git', ['push', '-u', 'origin', 'master', '-v'], { cwd: vaultDir }, (err3, stdout3, stderr3) => {
-          console.log(`[gitSync] git push -v completed`)
+        // Push current branch to origin with upstream set
+        // Using 'HEAD' pushes the current branch, avoiding hardcoded master/main issues
+        execFile('git', ['push', '-u', 'origin', 'HEAD', '-v'], { cwd: vaultDir }, (err3, stdout3, stderr3) => {
+          console.log(`[gitSync] git push -u origin HEAD -v completed`)
           console.log(`[gitSync]   stdout: "${stdout3}"`)
           console.log(`[gitSync]   stderr: "${stderr3}"`)
           if (err3) {
