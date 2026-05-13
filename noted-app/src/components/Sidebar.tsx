@@ -442,7 +442,7 @@ export default function Sidebar({
         </button>
         {isRepo && (
           <button
-            className={`sidebar-btn sync-btn ${hasChanges ? 'has-changes' : ''}`}
+            className={`sidebar-btn sync-btn ${hasChanges ? 'has-changes' : ''} ${syncing ? 'syncing' : ''}`}
             onClick={handleSync}
             disabled={syncing || !hasChanges}
             title={hasChanges ? 'Sync to GitHub' : 'No changes to sync'}

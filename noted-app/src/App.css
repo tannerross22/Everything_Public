@@ -379,8 +379,11 @@ body {
 }
 
 .sync-btn:disabled {
-  opacity: 0.8;
+  opacity: 0.6;
   cursor: not-allowed;
+}
+
+.sync-btn.syncing {
   animation: spin 1s linear infinite;
 }
 
