@@ -100,15 +100,18 @@ Bugs found via full code review on 2026-05-13. Noted is an Obsidian-like Electro
 ## Bug 10 — Can't edit after deleting a note (focus trap)
 
 **Severity:** High\
-**File:** `noted-app/src/components/Editor.tsx`\
+**Files:** `noted-app/src/components/Sidebar.tsx`, `noted-app/src/App.tsx`, `noted-app/electron/main.ts`, `noted-app/electron/preload.ts`\
 **Description:** After deleting a note, the editor unmounts but focus stays trapped. When clicking a new note in the sidebar, Milkdown mounts but doesn't receive focus — the user must alt-tab away and back to start editing.\
-**Fix:** Auto-focus the ProseMirror view (`view.focus()`) after the editor is created in the `useEffect`.\
+**Root Cause:** `window.confirm()` in Electron's renderer process corrupts the browser's internal focus state in a way that persists until a window-level blur/focus cycle resets it. Clicking within the app (even directly on the editor's contenteditable) cannot recover from this.\
+**Fix:** Replace all `confirm()` calls with `window.api.confirm()` which routes through `dialog.showMessageBox()` on the main process via IPC. This dialog is async and doesn't corrupt focus state. Added `dialog:confirm` IPC handler in `main.ts`, exposed it in `preload.ts`, typed it in `global.d.ts`, and updated callers in `Sidebar.tsx` and `App.tsx`.\
 **Status:** Fixed
 
 ## Bug 11 — Can't click below content to start typing
 
 **Severity:** High\
-**File:** `noted-app/src/components/Editor.tsx`, `noted-app/src/App.css`\
-**Description:** The empty space below the document content in the editor is not part of ProseMirror's editable area. Clicking there does nothing — the user can only type where existing content exists. For a note-taking app, users expect to click anywhere in the body to start typing.\
-**Fix:** Added a click handler on `.editor-container` that detects clicks outside `.milkdown`, then places the cursor at the end of the document and focuses the editor. Added `cursor: text` to the container CSS.\
+**File:** `noted-app/src/components/Editor.tsx`\
+**Description:** The empty space below the document content in the editor is not part of ProseMirror's editable area. Clicking there does nothing — the user can only type where existing content exists.\
+**Root Cause:** `.ProseMirror` has `flex: 1` CSS so it fills the entire editor height. The click handler's early-return guard `target.closest('.ProseMirror')` fired on every click, so the below-content insertion logic never ran. Also used `state.selection.constructor.near()` (fragile) instead of `TextSelection.near()`.\
+**Fix:** Removed the `.ProseMirror` guard; instead check only whether `clientY <= lastChild.getBoundingClientRect().bottom` to let in-content clicks pass through to ProseMirror natively. Added `e.preventDefault()` for below-content clicks to prevent ProseMirror's mousedown from overriding the dispatch. Replaced selection with explicit `TextSelection.near()` imported from `@milkdown/prose/state`.\
 **Status:** Fixed
+
