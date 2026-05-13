@@ -1,23 +1,5 @@
 # Isaac
 
-\[\[Contemplations]]
+\[\[Isaac]]
 
-<br />
-
-<br />
-
-<br />
-
-<br />
-
-<br />
-
-<br />
-
-My name is Isaac, yo
-
-<br />
-
-<br />
-
-Wiki wiki word
+This man is THE man

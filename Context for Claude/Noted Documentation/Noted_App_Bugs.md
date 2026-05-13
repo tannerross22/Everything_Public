@@ -114,4 +114,3 @@ Bugs found via full code review on 2026-05-13. Noted is an Obsidian-like Electro
 **Root Cause:** `.ProseMirror` has `flex: 1` CSS so it fills the entire editor height. The click handler's early-return guard `target.closest('.ProseMirror')` fired on every click, so the below-content insertion logic never ran. Also used `state.selection.constructor.near()` (fragile) instead of `TextSelection.near()`.\
 **Fix:** Removed the `.ProseMirror` guard; instead check only whether `clientY <= lastChild.getBoundingClientRect().bottom` to let in-content clicks pass through to ProseMirror natively. Added `e.preventDefault()` for below-content clicks to prevent ProseMirror's mousedown from overriding the dispatch. Replaced selection with explicit `TextSelection.near()` imported from `@milkdown/prose/state`.\
 **Status:** Fixed
-
