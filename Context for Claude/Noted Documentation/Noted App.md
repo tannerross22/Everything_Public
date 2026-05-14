@@ -191,6 +191,6 @@ After each phase, launch with `npm run dev` and test:
 
 <br />
 
-<br />
+## Bugs in the code
 
-![]
+\[\[Noted App Bugs]] is where bugs should be documented and reported with their fix and or unsolved solution

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import type { FileTreeNode } from '../types'
+import type { ModalConfig } from '../hooks/useModal'
 import { DULL_COLOR } from '../hooks/useFolderColors'
 
 interface SidebarProps {
@@ -21,6 +22,7 @@ interface SidebarProps {
   onCopy: (path: string) => void
   onPaste: (destFolder: string) => void
   onCollapse?: () => void
+  onConfirm?: (config: ModalConfig) => Promise<boolean>
   style?: React.CSSProperties
   className?: string
 }
@@ -53,9 +55,11 @@ export default function Sidebar({
   onCopy,
   onPaste,
   onCollapse,
+  onConfirm,
   style,
   className,
 }: SidebarProps) {
+  console.log('[Sidebar] Component rendered, vaultDir:', vaultDir)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [draggingPath, setDraggingPath] = useState<string | null>(null)
   const [dragOverPath, setDragOverPath] = useState<string | null>(null)
@@ -67,6 +71,8 @@ export default function Sidebar({
   const [isRepo, setIsRepo] = useState(false)
   const [hasChanges, setHasChanges] = useState(false)
   const [syncing, setSyncing] = useState(false)
+  const [isProcessing, setIsProcessing] = useState(false)
+  const [showSynced, setShowSynced] = useState(false)
 
   // ── Git Status ────────────────────────────────────────────────────────────
   const refreshGitStatus = useCallback(async () => {
@@ -85,10 +91,39 @@ export default function Sidebar({
   }, [vaultDir])
 
   useEffect(() => {
+    console.log(`[Sidebar] Setting up file watcher for vault: ${vaultDir}`)
     refreshGitStatus()
-    const interval = setInterval(refreshGitStatus, 30000)
-    return () => clearInterval(interval)
-  }, [refreshGitStatus])
+
+    // Listen for file changes and refresh status
+    let processingTimeout: NodeJS.Timeout | null = null
+    console.log('[Sidebar] Attaching onFilesChanged listener')
+    const unsubscribe = window.api.onFilesChanged(async () => {
+      console.log('[Sidebar] *** FILES CHANGED EVENT FIRED ***')
+      if (processingTimeout) clearTimeout(processingTimeout)
+      setIsProcessing(true)
+      console.log('[Sidebar] isProcessing = true, waiting 1 second before refresh')
+
+      // Keep processing state visible for at least 1 second for user feedback
+      processingTimeout = setTimeout(async () => {
+        console.log('[Sidebar] Calling refreshGitStatus...')
+        await refreshGitStatus()
+        setIsProcessing(false)
+        console.log('[Sidebar] Processing cleared, status refreshed')
+        processingTimeout = null
+      }, 1000)
+    })
+    console.log('[Sidebar] onFilesChanged listener attached')
+
+    // Also refresh every 30 seconds as fallback
+    const interval = setInterval(() => refreshGitStatus(), 30000)
+
+    return () => {
+      console.log('[Sidebar] Cleaning up file watcher listeners')
+      if (processingTimeout) clearTimeout(processingTimeout)
+      unsubscribe()
+      clearInterval(interval)
+    }
+  }, [vaultDir])
 
   const handleSync = async () => {
     if (syncing || !vaultDir) return
@@ -109,6 +144,9 @@ export default function Sidebar({
       await new Promise(resolve => setTimeout(resolve, 500))
       await refreshGitStatus()
       console.log('[Sidebar] Git status refreshed')
+      // Show "Synced" confirmation for 2 seconds
+      setShowSynced(true)
+      setTimeout(() => setShowSynced(false), 2000)
     } catch (error) {
       console.error('[Sidebar] Sync error:', error)
       // Still refresh status even on error
@@ -178,23 +216,49 @@ export default function Sidebar({
   // ── Delete ────────────────────────────────────────────────────────────────
   const handleDeleteActive = async () => {
     if (!onDeleteNote || !activeNoteName) return
-    if (await window.api.confirm(`Delete "${activeNoteName}"?`)) {
+    const confirmed = onConfirm
+      ? await onConfirm({
+          title: 'Delete Note',
+          message: `Delete "${activeNoteName}"? This cannot be undone.`,
+          confirmText: 'Delete',
+          cancelText: 'Cancel',
+          isDangerous: true,
+        })
+      : await window.api.confirm(`Delete "${activeNoteName}"?`)
+    if (confirmed) {
       onDeleteNote()
     }
   }
 
   const handleDeleteFolder = async (node: FileTreeNode) => {
     setCtxMenu(null)
-    const confirmed = await window.api.confirm(
-      `Delete folder "${node.name}" and everything inside it?`
-    )
+    const confirmed = onConfirm
+      ? await onConfirm({
+          title: 'Delete Folder',
+          message: `Delete folder "${node.name}" and everything inside it? This cannot be undone.`,
+          confirmText: 'Delete',
+          cancelText: 'Cancel',
+          isDangerous: true,
+        })
+      : await window.api.confirm(
+          `Delete folder "${node.name}" and everything inside it?`
+        )
     if (confirmed) onDeleteFolder(node.path)
   }
 
   const handleDeleteNote = async (node: FileTreeNode) => {
     setCtxMenu(null)
     if (!onDeleteNote) return
-    if (await window.api.confirm(`Delete "${node.name}"?`)) {
+    const confirmed = onConfirm
+      ? await onConfirm({
+          title: 'Delete Note',
+          message: `Delete "${node.name}"? This cannot be undone.`,
+          confirmText: 'Delete',
+          cancelText: 'Cancel',
+          isDangerous: true,
+        })
+      : await window.api.confirm(`Delete "${node.name}"?`)
+    if (confirmed) {
       await onOpenNote(node.path)
       onDeleteNote()
     }
@@ -448,12 +512,12 @@ export default function Sidebar({
         </button>
         {isRepo && (
           <button
-            className={`sidebar-btn sync-btn ${hasChanges ? 'has-changes' : ''} ${syncing ? 'syncing' : ''}`}
+            className={`sidebar-btn sync-btn ${hasChanges ? 'has-changes' : ''} ${syncing ? 'syncing' : ''} ${isProcessing ? 'processing' : ''}`}
             onClick={handleSync}
-            disabled={syncing || !hasChanges}
-            title={hasChanges ? 'Sync to GitHub' : 'No changes to sync'}
+            disabled={syncing || isProcessing || !hasChanges}
+            title={isProcessing ? 'Processing changes...' : hasChanges ? 'Sync to GitHub' : 'No changes to sync'}
           >
-            {syncing ? '⟳' : 'Sync'}
+            {showSynced ? 'Synced' : 'Sync'}
           </button>
         )}
       </div>

@@ -11,6 +11,8 @@ export default function GitPanel({ vaultDir }: GitPanelProps) {
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null)
   const [expanded, setExpanded] = useState(false)
 
+  const [isProcessing, setIsProcessing] = useState(false)
+
   const refreshStatus = useCallback(async () => {
     if (!vaultDir) return
     try {
@@ -28,9 +30,30 @@ export default function GitPanel({ vaultDir }: GitPanelProps) {
 
   useEffect(() => {
     refreshStatus()
-    // Refresh status every 30 seconds
+
+    // Listen for file changes and refresh status immediately
+    let processingTimeout: NodeJS.Timeout | null = null
+    const unsubscribe = window.api.onFilesChanged(() => {
+      // Clear any pending timeout
+      if (processingTimeout) clearTimeout(processingTimeout)
+
+      setIsProcessing(true)
+      // Debounce to wait for file writes to stabilize (300ms from chokidar config)
+      processingTimeout = setTimeout(async () => {
+        await refreshStatus()
+        setIsProcessing(false)
+        processingTimeout = null
+      }, 400) // Slightly longer than chokidar's stabilityThreshold
+    })
+
+    // Also refresh every 30 seconds as fallback
     const interval = setInterval(refreshStatus, 30000)
-    return () => clearInterval(interval)
+
+    return () => {
+      if (processingTimeout) clearTimeout(processingTimeout)
+      unsubscribe()
+      clearInterval(interval)
+    }
   }, [refreshStatus])
 
   const handleSync = async () => {
@@ -96,9 +119,10 @@ export default function GitPanel({ vaultDir }: GitPanelProps) {
           <button
             className="git-sync-btn"
             onClick={handleSync}
-            disabled={syncing || changedCount === 0}
+            disabled={syncing || isProcessing || changedCount === 0}
+            title={isProcessing ? 'Processing changes...' : changedCount === 0 ? 'No changes to sync' : ''}
           >
-            {syncing ? 'Syncing...' : 'Sync to GitHub'}
+            {syncing ? 'Syncing...' : isProcessing ? '⟳ Processing...' : 'Sync to GitHub'}
           </button>
 
           {message && (

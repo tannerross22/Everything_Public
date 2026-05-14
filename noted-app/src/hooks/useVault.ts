@@ -55,15 +55,19 @@ export function useVault() {
 
   // Save note with debouncing
   const saveNote = useCallback((filePath: string, content: string) => {
+    console.log('[useVault] Save triggered, debouncing for 100ms')
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
     saveTimerRef.current = setTimeout(async () => {
+      console.log('[useVault] Debounce expired, calling writeNote')
       await window.api.writeNote(filePath, content)
-    }, 500)
+      console.log('[useVault] writeNote completed')
+    }, 100)
   }, [])
 
   // Update content in state and trigger debounced save
   const updateContent = useCallback((content: string) => {
     if (!activeNote) return
+    console.log('[useVault] updateContent called - user is typing')
     setActiveNote((prev) => prev ? { ...prev, content } : null)
     saveNote(activeNote.path, content)
   }, [activeNote?.path, saveNote])
@@ -145,11 +149,23 @@ export function useVault() {
       await openNote(match.path)
       return match.path
     } else {
-      const newPath = await createNewNote(linkName)
+      // Ask user before creating a new note
+      const confirmed = await window.api.confirm(`Create new note "${linkName}"?`)
+      if (!confirmed) return undefined
+
+      // Get the folder of the current note, or use vault root
+      let targetFolder = vaultDir
+      if (activeNote?.path) {
+        const sep = activeNote.path.includes('\\') ? '\\' : '/'
+        const lastSepIndex = activeNote.path.lastIndexOf(sep)
+        targetFolder = activeNote.path.substring(0, lastSepIndex)
+      }
+
+      const newPath = await createNewNote(linkName, targetFolder)
       if (newPath) await openNote(newPath)
       return newPath
     }
-  }, [notes, openNote, createNewNote])
+  }, [notes, openNote, createNewNote, vaultDir, activeNote?.path])
 
   const clearActiveNote = useCallback(() => {
     setActiveNote(null)

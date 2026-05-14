@@ -352,7 +352,7 @@ export function gitSync(vaultDir: string, message: string): Promise<string> {
 
               // Pull with explicit remote and branch reference (merge strategy, no rebase)
               // Regular merge is simpler and avoids complex rebase conflicts
-              execFile('git', ['pull', 'origin', branch], { cwd: vaultDir }, (err2b, stdout2b, stderr2b) => {
+              execFile('git', ['pull', 'origin', branch, '--allow-unrelated-histories', '-X', 'ours'], { cwd: vaultDir }, (err2b, stdout2b, stderr2b) => {
                 console.log(`[gitSync] git pull origin ${branch} completed`)
                 console.log(`[gitSync]   stdout: "${stdout2b}"`)
                 console.log(`[gitSync]   stderr: "${stderr2b}"`)

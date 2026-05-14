@@ -55,15 +55,26 @@ function startWatcher(vaultDir: string) {
     fileWatcher.close()
   }
 
-  fileWatcher = watch(path.join(vaultDir, '**/*.md'), {
+  const watchPath = path.join(vaultDir, '**/*.md')
+  console.log(`[startWatcher] Starting file watcher on: ${watchPath}`)
+
+  fileWatcher = watch(watchPath, {
     ignoreInitial: true,
     awaitWriteFinish: { stabilityThreshold: 300 },
     ignored: ['**/node_modules/**', '**/dist/**', '**/dist-electron/**', '**/.git/**'],
   })
 
-  fileWatcher.on('all', () => {
+  fileWatcher.on('ready', () => {
+    console.log('[FileWatcher] Ready and listening for changes')
+  })
+
+  fileWatcher.on('all', (event, filePath) => {
+    console.log(`[FileWatcher] File event: ${event} on ${filePath}, isWriting: ${isWriting}`)
     if (!isWriting && mainWindow) {
+      console.log('[FileWatcher] → Sending vault:files-changed event')
       mainWindow.webContents.send('vault:files-changed')
+    } else {
+      console.log(`[FileWatcher] → Event blocked (isWriting=${isWriting})`)
     }
   })
 }
@@ -81,6 +92,7 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
     },
   })
 
@@ -149,10 +161,21 @@ function registerIpcHandlers() {
   })
 
   ipcMain.handle('vault:write', async (_event, filePath: string, content: string) => {
+    console.log(`[vault:write] Writing to ${filePath}`)
     isWriting = true
+    console.log('[vault:write] isWriting = true')
     writeNote(filePath, content)
+    console.log('[vault:write] File written, isWriting will be reset in 200ms')
     // Small delay before re-enabling watcher to avoid self-trigger
-    setTimeout(() => { isWriting = false }, 200)
+    setTimeout(() => {
+      isWriting = false
+      console.log('[vault:write] isWriting = false')
+      // Emit file changed event after write completes
+      if (mainWindow) {
+        console.log('[vault:write] Emitting vault:files-changed event')
+        mainWindow.webContents.send('vault:files-changed')
+      }
+    }, 200)
   })
 
   ipcMain.handle('vault:create', (_event, vaultDir: string, name: string) => {
@@ -190,8 +213,13 @@ function registerIpcHandlers() {
     return gitStatus(vaultDir)
   })
 
-  ipcMain.handle('git:sync', (_event, vaultDir: string, message: string) => {
-    return gitSync(vaultDir, message)
+  ipcMain.handle('git:sync', async (_event, vaultDir: string, message: string) => {
+    const result = await gitSync(vaultDir, message)
+    // Emit files changed event to refresh UI with any new files from remote
+    if (mainWindow) {
+      mainWindow.webContents.send('vault:files-changed')
+    }
+    return result
   })
 
   ipcMain.handle('git:log', (_event, vaultDir: string, count: number) => {

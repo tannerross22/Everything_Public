@@ -1,10 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useVault } from './hooks/useVault'
 import { useGraph } from './hooks/useGraph'
+import { useModal } from './hooks/useModal'
 import Sidebar from './components/Sidebar'
 import Editor from './components/Editor'
 import GraphView from './components/GraphView'
 import SearchBar from './components/SearchBar'
+import Modal from './components/Modal'
 import {
   loadFolderColors,
   assignFolderColor,
@@ -17,6 +19,7 @@ import FindBar from './components/FindBar'
 type ViewMode = 'editor' | 'graph'
 
 function App() {
+  const modal = useModal()
   const {
     vaultDir,
     notes,
@@ -31,10 +34,40 @@ function App() {
     createFolder,
     deleteFolder,
     moveItem,
-    resolveLink,
+    resolveLink: originalResolveLink,
     refreshNotes,
     clearActiveNote,
   } = useVault()
+
+  // Custom resolveLink that uses the modal confirm instead of API confirm
+  const resolveLink = useCallback(async (linkName: string): Promise<string | undefined> => {
+    const match = notes.find((n) => n.name.toLowerCase() === linkName.toLowerCase())
+    if (match) {
+      await openNote(match.path)
+      return match.path
+    } else {
+      // Use modal confirm instead of window.api.confirm
+      const confirmed = await modal.confirm({
+        title: 'Create New Note',
+        message: `Create a new note called "${linkName}"?`,
+        confirmText: 'Create',
+        cancelText: 'Cancel',
+      })
+      if (!confirmed) return undefined
+
+      // Get the folder of the current note, or use vault root
+      let targetFolder = vaultDir
+      if (activeNote?.path) {
+        const sep = activeNote.path.includes('\\') ? '\\' : '/'
+        const lastSepIndex = activeNote.path.lastIndexOf(sep)
+        targetFolder = activeNote.path.substring(0, lastSepIndex)
+      }
+
+      const newPath = await createNewNote(linkName, targetFolder)
+      if (newPath) await openNote(newPath)
+      return newPath
+    }
+  }, [notes, openNote, modal, vaultDir, activeNote?.path, createNewNote])
 
   const { nodes, links } = useGraph(notes, vaultDir)
   const [viewMode, setViewMode] = useState<ViewMode>('editor')
@@ -403,6 +436,7 @@ function App() {
         onCopy={setClipboardPath}
         onPaste={handlePaste}
         onCollapse={handleToggleSidebarCollapse}
+        onConfirm={modal.confirm}
         style={{ width: sidebarCollapsed ? '0px' : `${sidebarWidth}px`, overflow: 'hidden' }}
         className={isResizing ? 'sidebar-resizing' : ''}
       />
@@ -569,6 +603,19 @@ function App() {
         visible={searchVisible}
         onClose={() => setSearchVisible(false)}
       />
+
+      {/* Custom Modal Dialog */}
+      {modal.isOpen && modal.config && (
+        <Modal
+          title={modal.config.title}
+          message={modal.config.message}
+          confirmText={modal.config.confirmText}
+          cancelText={modal.config.cancelText}
+          isDangerous={modal.config.isDangerous}
+          onConfirm={modal.handleConfirm}
+          onCancel={modal.handleCancel}
+        />
+      )}
     </div>
   )
 }
