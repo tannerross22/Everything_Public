@@ -22,6 +22,8 @@ import {
   gitAddRemote,
   gitGetRemoteUrl,
   gitInitialCommit,
+  saveImage,
+  convertBase64ImagesToFiles,
 } from './fileService'
 
 let mainWindow: BrowserWindow | null = null
@@ -230,6 +232,16 @@ function registerIpcHandlers() {
       message,
     })
     return result.response === 1
+  })
+
+  // Image handling
+  ipcMain.handle('vault:saveImage', (_event, vaultDir: string, imageData: ArrayBuffer, imageType: string) => {
+    const buffer = Buffer.from(imageData)
+    return saveImage(vaultDir, buffer, imageType)
+  })
+
+  ipcMain.handle('vault:convertBase64ImagesToFiles', (_event, vaultDir: string, noteId: string, markdown: string) => {
+    return convertBase64ImagesToFiles(vaultDir, noteId, markdown)
   })
 }
 

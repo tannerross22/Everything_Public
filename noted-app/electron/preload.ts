@@ -40,4 +40,10 @@ contextBridge.exposeInMainWorld('api', {
 
   // Native confirm dialog (avoids renderer confirm() which corrupts Electron focus)
   confirm: (message: string): Promise<boolean> => ipcRenderer.invoke('dialog:confirm', message),
+
+  // Image handling
+  saveImage: (vaultDir: string, imageData: ArrayBuffer, imageType: string): Promise<string> =>
+    ipcRenderer.invoke('vault:saveImage', vaultDir, imageData, imageType),
+  convertBase64ImagesToFiles: (vaultDir: string, noteId: string, markdown: string): Promise<string> =>
+    ipcRenderer.invoke('vault:convertBase64ImagesToFiles', vaultDir, noteId, markdown),
 })

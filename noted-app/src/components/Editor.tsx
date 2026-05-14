@@ -14,11 +14,12 @@ interface EditorProps {
   onChange: (markdown: string) => void
   noteId: string
   onLinkClick?: (target: string) => void
+  vaultDir?: string
 }
 
 const LINE_HEIGHT = 27 // ~1rem * 1.7 line-height
 
-export default function Editor({ content, onChange, noteId, onLinkClick }: EditorProps) {
+export default function Editor({ content, onChange, noteId, onLinkClick, vaultDir }: EditorProps) {
   const editorRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const editorInstanceRef = useRef<MilkdownEditor | null>(null)
@@ -47,7 +48,20 @@ export default function Editor({ content, onChange, noteId, onLinkClick }: Edito
               initialLoadRef.current = false
               return
             }
-            onChange(markdown)
+            // After markdown updates, convert base64 images to files
+            if (vaultDir && markdown.includes('data:image')) {
+              window.api.convertBase64ImagesToFiles(vaultDir, noteId, markdown).then((updatedMarkdown) => {
+                if (updatedMarkdown !== markdown) {
+                  onChange(updatedMarkdown)
+                } else {
+                  onChange(markdown)
+                }
+              }).catch(() => {
+                onChange(markdown)
+              })
+            } else {
+              onChange(markdown)
+            }
           })
         })
         .use(onLinkClick ? createWikiLinkPlugin(onLinkClick) : [])

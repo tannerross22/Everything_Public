@@ -39,6 +39,10 @@ declare global {
       // Window
       setTitle: (title: string) => Promise<void>
       confirm: (message: string) => Promise<boolean>
+
+      // Image handling
+      saveImage: (vaultDir: string, imageData: ArrayBuffer, imageType: string) => Promise<string>
+      convertBase64ImagesToFiles: (vaultDir: string, noteId: string, markdown: string) => Promise<string>
     }
   }
 }

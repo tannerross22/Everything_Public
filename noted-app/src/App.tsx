@@ -457,6 +457,7 @@ function App() {
                 content={activeNote.content}
                 onChange={updateContent}
                 noteId={activeNote.path}
+                vaultDir={vaultDir}
                 onLinkClick={async (linkName: string) => {
                   const notePath = await resolveLink(linkName)
                   if (notePath) await openNoteInTab(notePath)

@@ -476,3 +476,90 @@ export function gitInitialCommit(vaultDir: string, message: string = 'Initial co
     })
   })
 }
+
+// ── Image handling ──
+
+/**
+ * Save a pasted image to the vault's .assets folder
+ * Returns the relative path for markdown image reference
+ */
+export function saveImage(vaultDir: string, imageBuffer: Buffer, imageType: string): string {
+  const assetsDir = path.join(vaultDir, 'assets')
+
+  // Create assets folder if it doesn't exist
+  if (!fs.existsSync(assetsDir)) {
+    fs.mkdirSync(assetsDir, { recursive: true })
+  }
+
+  // Generate a unique filename based on timestamp
+  const timestamp = Date.now()
+  const extension = imageType === 'image/png' ? 'png' : imageType === 'image/jpeg' ? 'jpg' : 'webp'
+  const filename = `image-${timestamp}.${extension}`
+  const filepath = path.join(assetsDir, filename)
+
+  // Save the image file
+  fs.writeFileSync(filepath, imageBuffer)
+
+  console.log(`[saveImage] Saved image to: ${filepath}`)
+
+  // Return relative path for markdown reference
+  // Use forward slashes for cross-platform compatibility in markdown
+  // GitHub and Milkdown both support ./assets/ format
+  return `./assets/${filename}`
+}
+
+/**
+ * Find base64-encoded images in markdown and convert them to files
+ * Replaces data URLs with file references
+ * Uses content hash to avoid re-saving the same image multiple times
+ */
+export async function convertBase64ImagesToFiles(vaultDir: string, noteId: string, markdown: string): Promise<string> {
+  // Regex to find markdown image syntax with data URLs
+  const base64ImageRegex = /!\[\]\(data:image\/(\w+);base64,([A-Za-z0-9+/=]+)\)/g
+
+  let updatedMarkdown = markdown
+  const assetsDir = path.join(vaultDir, 'assets')
+
+  // Create assets folder if it doesn't exist
+  if (!fs.existsSync(assetsDir)) {
+    fs.mkdirSync(assetsDir, { recursive: true })
+  }
+
+  // Process each base64 image
+  const matches = Array.from(markdown.matchAll(base64ImageRegex))
+  for (const match of matches) {
+    const imageType = match[1] // png, jpeg, webp, etc.
+    const base64Data = match[2]
+    const fullMatch = match[0]
+
+    try {
+      // Create a hash of the base64 data to use as filename
+      // This ensures the same image always produces the same file
+      const crypto = require('crypto')
+      const hash = crypto.createHash('md5').update(base64Data).digest('hex').substring(0, 8)
+
+      const extension = imageType === 'jpeg' ? 'jpg' : imageType
+      const filename = `image-${hash}.${extension}`
+      const filepath = path.join(assetsDir, filename)
+
+      // Only save if the file doesn't already exist
+      if (!fs.existsSync(filepath)) {
+        // Convert base64 to buffer
+        const buffer = Buffer.from(base64Data, 'base64')
+        fs.writeFileSync(filepath, buffer)
+        console.log(`[convertBase64ImagesToFiles] Saved image to ${filepath}`)
+      } else {
+        console.log(`[convertBase64ImagesToFiles] Image already exists, skipping: ${filepath}`)
+      }
+
+      // Replace the base64 URL with file reference
+      const imagePath = `./assets/${filename}`
+      updatedMarkdown = updatedMarkdown.replace(fullMatch, `![](${imagePath})`)
+    } catch (error) {
+      console.error(`[convertBase64ImagesToFiles] Failed to convert image:`, error)
+      // Keep original if conversion fails
+    }
+  }
+
+  return updatedMarkdown
+}
