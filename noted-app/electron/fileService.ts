@@ -61,8 +61,8 @@ export function buildFileTree(vaultDir: string): FileTreeNode[] {
     for (const entry of entries) {
       const fullPath = path.join(dir, entry.name)
 
-      // Skip hidden and system files/folders
-      if (entry.name.startsWith('.') || entry.name === 'node_modules' || entry.name === 'dist' || entry.name === 'dist-electron') {
+      // Skip hidden, system, and asset files/folders
+      if (entry.name.startsWith('.') || entry.name === 'node_modules' || entry.name === 'dist' || entry.name === 'dist-electron' || entry.name === 'assets') {
         continue
       }
 
