@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Editor as MilkdownEditor, rootCtx, defaultValueCtx, editorViewCtx } from '@milkdown/core'
 import { TextSelection } from '@milkdown/prose/state'
 import { commonmark } from '@milkdown/preset-commonmark'
@@ -7,6 +7,10 @@ import { history } from '@milkdown/plugin-history'
 import { listener, listenerCtx } from '@milkdown/plugin-listener'
 import { nord } from '@milkdown/theme-nord'
 import { createWikiLinkPlugin } from '../editor/wikiLinkPlugin'
+import { spellCheckPlugin } from '../editor/spellCheckPlugin'
+import { useLanguageTool } from '../hooks/useLanguageTool'
+import { generatePredictiveSuggestions } from '../utils/spellSuggest'
+import EditorContextMenu from './EditorContextMenu'
 import '@milkdown/theme-nord/style.css'
 
 interface EditorProps {
@@ -24,6 +28,16 @@ export default function Editor({ content, onChange, noteId, onLinkClick, vaultDi
   const containerRef = useRef<HTMLDivElement>(null)
   const editorInstanceRef = useRef<MilkdownEditor | null>(null)
   const initialLoadRef = useRef(true)
+  const suggestionCacheRef = useRef<Map<string, string[]>>(new Map())
+  const { checkWord } = useLanguageTool()
+  const [contextMenu, setContextMenu] = useState<{
+    x: number
+    y: number
+    selectedText: string
+    suggestions: string[]
+    wordStart: number
+    wordEnd: number
+  } | null>(null)
 
   useEffect(() => {
     if (!editorRef.current) return
@@ -42,6 +56,7 @@ export default function Editor({ content, onChange, noteId, onLinkClick, vaultDi
         .use(gfm)
         .use(history)
         .use(listener)
+        .use(spellCheckPlugin)
         .config((ctx) => {
           ctx.get(listenerCtx).markdownUpdated((_ctx: any, markdown: string) => {
             if (initialLoadRef.current) {
@@ -74,7 +89,11 @@ export default function Editor({ content, onChange, noteId, onLinkClick, vaultDi
           try {
             if (editorInstanceRef.current !== editor) return
             const view = editor.ctx.get(editorViewCtx)
-            if (view) view.dom.focus()
+            if (view) {
+              // Disable native spell check to avoid conflicts with custom decorations
+              view.dom.setAttribute('spellcheck', 'false')
+              view.dom.focus()
+            }
           } catch {}
         })
       })
@@ -90,6 +109,7 @@ export default function Editor({ content, onChange, noteId, onLinkClick, vaultDi
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [noteId])
+
 
   // Click in empty space below content: insert empty lines to reach that point
   useEffect(() => {
@@ -139,9 +159,198 @@ export default function Editor({ content, onChange, noteId, onLinkClick, vaultDi
     return () => container.removeEventListener('mousedown', handleClick)
   }, [noteId])
 
+  // Context menu handler
+  useEffect(() => {
+    const container = containerRef.current
+    if (!container) return
+
+    const handleContextMenu = (e: MouseEvent) => {
+      e.preventDefault()
+
+      if (!editorInstanceRef.current) return
+
+      // Get the editor view
+      const view = editorInstanceRef.current.ctx.get(editorViewCtx)
+      if (!view) return
+
+      // Get selected text from window selection
+      let selectedText = window.getSelection()?.toString() || ''
+      let wordToCheck = selectedText.trim()
+      let wordStart = 0
+      let wordEnd = 0
+
+      // If no selection, try to get word at cursor position
+      if (!selectedText) {
+        const coords = { left: e.clientX, top: e.clientY }
+        const pos = view.posAtCoords(coords)
+
+        if (pos) {
+          const { doc } = view.state
+          const $pos = doc.resolve(pos.pos)
+          const node = $pos.parent
+          const textContent = node.textContent
+          const offset = $pos.parentOffset
+          const nodePos = pos.pos - offset
+
+          // Find word boundaries
+          let start = offset
+          let end = offset
+
+          // Move start backwards to find word start
+          while (start > 0 && /[\w']/.test(textContent[start - 1])) {
+            start--
+          }
+
+          // Move end forwards to find word end
+          while (end < textContent.length && /[\w']/.test(textContent[end])) {
+            end++
+          }
+
+          if (start < end) {
+            wordToCheck = textContent.slice(start, end)
+            selectedText = wordToCheck
+            wordStart = nodePos + start
+            wordEnd = nodePos + end
+          }
+        }
+      }
+
+      // Check cache first for instant suggestions
+      let suggestions: string[] = []
+      const cacheKey = wordToCheck.toLowerCase()
+      if (wordToCheck && !/\s/.test(wordToCheck)) {
+        if (suggestionCacheRef.current.has(cacheKey)) {
+          suggestions = suggestionCacheRef.current.get(cacheKey) || []
+        } else {
+          // No cache hit, show predictive suggestions immediately
+          suggestions = generatePredictiveSuggestions(wordToCheck)
+        }
+      }
+
+      // Show menu immediately with cached or predictive suggestions
+      setContextMenu({
+        x: e.clientX,
+        y: e.clientY,
+        selectedText: wordToCheck,
+        suggestions,
+        wordStart,
+        wordEnd,
+      })
+
+      // Fetch fresh suggestions in the background if not cached
+      if (wordToCheck && !/\s/.test(wordToCheck) && !suggestionCacheRef.current.has(cacheKey)) {
+        checkWord(wordToCheck).then((newSuggestions) => {
+          suggestionCacheRef.current.set(cacheKey, newSuggestions)
+          // Update context menu with fresh suggestions if it's still open and has no API suggestions
+          setContextMenu((prev) => {
+            if (prev && prev.selectedText === wordToCheck) {
+              // Use API suggestions if available, otherwise keep predictive suggestions
+              const finalSuggestions = newSuggestions.length > 0 ? newSuggestions : prev.suggestions
+              return { ...prev, suggestions: finalSuggestions }
+            }
+            return prev
+          })
+        })
+      }
+    }
+
+    container.addEventListener('contextmenu', handleContextMenu)
+    return () => container.removeEventListener('contextmenu', handleContextMenu)
+  }, [])
+
+  const handleCopy = () => {
+    const selected = window.getSelection()?.toString()
+    if (selected) {
+      navigator.clipboard.writeText(selected)
+    }
+  }
+
+  const handlePaste = () => {
+    if (!editorInstanceRef.current) return
+    try {
+      const view = editorInstanceRef.current.ctx.get(editorViewCtx)
+      if (!view) return
+      navigator.clipboard.readText().then((text) => {
+        const { state } = view
+        const { tr } = state
+        const selection = state.selection
+        tr.insertText(text, selection.from, selection.to)
+        view.dispatch(tr)
+      })
+    } catch {}
+  }
+
+
+  const handleSelectSuggestion = (suggestion: string) => {
+    if (!editorInstanceRef.current || !contextMenu) return
+
+    try {
+      const view = editorInstanceRef.current.ctx.get(editorViewCtx)
+      if (!view) return
+
+      const { state } = view
+      let start = contextMenu.wordStart
+      let end = contextMenu.wordEnd
+
+      // If we have no stored positions, fall back to current selection
+      if (start === 0 && end === 0) {
+        const { selection } = state
+        start = selection.from
+        end = selection.to
+      }
+
+      const { tr } = state
+      tr.insertText(suggestion, start, end)
+      view.dispatch(tr)
+    } catch (e) {
+      console.warn('Error selecting suggestion:', e)
+    }
+  }
+
+  const handleInsertLink = () => {
+    if (!editorInstanceRef.current || !contextMenu) return
+
+    try {
+      const view = editorInstanceRef.current.ctx.get(editorViewCtx)
+      if (!view) return
+
+      const { state } = view
+      let text = contextMenu.selectedText
+      let start = contextMenu.wordStart
+      let end = contextMenu.wordEnd
+
+      // If no stored positions, try window selection
+      if (!text) {
+        text = window.getSelection()?.toString()
+        if (!text) return
+        const { selection } = state
+        start = selection.from
+        end = selection.to
+      }
+
+      const linked = `[[${text}]]`
+      const { tr } = state
+      tr.insertText(linked, start, end)
+      view.dispatch(tr)
+    } catch {}
+  }
+
   return (
     <div ref={containerRef} className="editor-container">
       <div ref={editorRef} className="milkdown-wrapper" />
+      {contextMenu && (
+        <EditorContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          selectedText={contextMenu.selectedText}
+          suggestions={contextMenu.suggestions}
+          onCopy={handleCopy}
+          onPaste={handlePaste}
+          onSelectSuggestion={handleSelectSuggestion}
+          onInsertLink={handleInsertLink}
+          onClose={() => setContextMenu(null)}
+        />
+      )}
     </div>
   )
 }

@@ -1214,6 +1214,25 @@ kbd {
   background: rgba(243, 139, 168, 0.15);
 }
 
+.context-menu-item.suggestion {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.context-menu-item.suggestion:hover {
+  background: rgba(203, 166, 247, 0.15);
+}
+
+.context-menu-item.suggestion {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.context-menu-item.suggestion:hover {
+  background: rgba(203, 166, 247, 0.15);
+}
+
+
 .context-menu-separator {
   height: 1px;
   background: var(--border);
@@ -1551,4 +1570,13 @@ kbd {
 .tab-new:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
+}
+
+/* Spell check error decoration */
+.spell-error {
+  text-decoration: wavy red underline;
+  text-underline-offset: 0px;
+  text-decoration-thickness: 1px;
+  position: relative;
+  z-index: 1;
 }
