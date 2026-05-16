@@ -24,6 +24,22 @@ contextBridge.exposeInMainWorld('api', {
     return () => ipcRenderer.removeListener('vault:files-changed', callback)
   },
 
+  // Menu events
+  onMenuNewNote: (callback: () => void) => {
+    ipcRenderer.on('menu:newNote', callback)
+    return () => ipcRenderer.removeListener('menu:newNote', callback)
+  },
+
+  onMenuOpenSettings: (callback: () => void) => {
+    ipcRenderer.on('menu:openSettings', callback)
+    return () => ipcRenderer.removeListener('menu:openSettings', callback)
+  },
+
+  onMenuSetSortOrder: (callback: (order: string) => void) => {
+    ipcRenderer.on('menu:setSortOrder', (_event, order) => callback(order))
+    return () => ipcRenderer.removeListener('menu:setSortOrder', callback)
+  },
+
   // Git operations
   isGitRepo: (vaultDir: string): Promise<boolean> => ipcRenderer.invoke('git:isRepo', vaultDir),
   gitIsRepo: (vaultDir: string): Promise<boolean> => ipcRenderer.invoke('git:isRepo', vaultDir),
@@ -37,6 +53,10 @@ contextBridge.exposeInMainWorld('api', {
 
   // Window
   setTitle: (title: string) => ipcRenderer.invoke('window:setTitle', title),
+  windowMinimize: () => ipcRenderer.invoke('window:minimize'),
+  windowToggleMaximize: () => ipcRenderer.invoke('window:maximize'),
+  windowClose: () => ipcRenderer.invoke('window:close'),
+  windowIsMaximized: (): Promise<boolean> => ipcRenderer.invoke('window:isMaximized'),
 
   // Native confirm dialog (avoids renderer confirm() which corrupts Electron focus)
   confirm: (message: string): Promise<boolean> => ipcRenderer.invoke('dialog:confirm', message),

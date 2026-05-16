@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, Menu } from 'electron'
 import path from 'path'
 import fs from 'fs'
 import { watch, type FSWatcher } from 'chokidar'
@@ -86,7 +86,9 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
-    title: 'Noted',
+    minWidth: 500,
+    minHeight: 400,
+    frame: false,
     icon: path.join(__dirname, '../electron/app.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -109,6 +111,67 @@ function createWindow() {
   // Start file watcher with saved vault dir
   const config = loadConfig()
   startWatcher(config.vaultDir)
+
+  // Setup application menu
+  setupMenu()
+}
+
+// ── Application Menu ──
+function setupMenu() {
+  type SortOrder = 'name-az' | 'name-za' | 'modified-new' | 'modified-old' | 'created-new' | 'created-old'
+  const sortOrders: SortOrder[] = ['name-az', 'name-za', 'modified-new', 'modified-old', 'created-new', 'created-old']
+  const sortLabels: Record<SortOrder, string> = {
+    'name-az': 'File name (A to Z)',
+    'name-za': 'File name (Z to A)',
+    'modified-new': 'Modified time (new to old)',
+    'modified-old': 'Modified time (old to new)',
+    'created-new': 'Created time (new to old)',
+    'created-old': 'Created time (old to new)',
+  }
+
+  const template: Electron.MenuItemConstructorOptions[] = [
+    {
+      label: 'File',
+      submenu: [
+        {
+          label: 'New Note',
+          accelerator: 'CmdOrCtrl+N',
+          click: () => {
+            if (mainWindow) {
+              mainWindow.webContents.send('menu:newNote')
+            }
+          },
+        },
+        {
+          label: 'Settings',
+          accelerator: 'CmdOrCtrl+,',
+          click: () => {
+            if (mainWindow) {
+              mainWindow.webContents.send('menu:openSettings')
+            }
+          },
+        },
+        {
+          type: 'separator',
+        },
+        {
+          label: 'Sort',
+          submenu: sortOrders.map((order) => ({
+            label: sortLabels[order],
+            type: 'radio' as const,
+            click: () => {
+              if (mainWindow) {
+                mainWindow.webContents.send('menu:setSortOrder', order)
+              }
+            },
+          })),
+        },
+      ],
+    },
+  ]
+
+  const menu = Menu.buildFromTemplate(template)
+  Menu.setApplicationMenu(menu)
 }
 
 // ── IPC Handlers ──
@@ -240,6 +303,24 @@ function registerIpcHandlers() {
 
   ipcMain.handle('git:initialCommit', (_event, vaultDir: string, message: string) => {
     return gitInitialCommit(vaultDir, message)
+  })
+
+  // Window controls (for frameless window)
+  ipcMain.handle('window:minimize', () => {
+    mainWindow?.minimize()
+  })
+
+  ipcMain.handle('window:maximize', () => {
+    if (!mainWindow) return
+    mainWindow.isMaximized() ? mainWindow.unmaximize() : mainWindow.maximize()
+  })
+
+  ipcMain.handle('window:close', () => {
+    mainWindow?.close()
+  })
+
+  ipcMain.handle('window:isMaximized', () => {
+    return mainWindow?.isMaximized() ?? false
   })
 
   // Window title

@@ -32,7 +32,7 @@ export default function GitPanel({ vaultDir }: GitPanelProps) {
     refreshStatus()
 
     // Listen for file changes and refresh status immediately
-    let processingTimeout: NodeJS.Timeout | null = null
+    let processingTimeout: ReturnType<typeof setTimeout> | null = null
     const unsubscribe = window.api.onFilesChanged(() => {
       // Clear any pending timeout
       if (processingTimeout) clearTimeout(processingTimeout)

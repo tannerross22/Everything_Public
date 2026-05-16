@@ -1,7 +1,9 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState } from 'react'
 import type { FileTreeNode } from '../types'
 import type { ModalConfig } from '../hooks/useModal'
 import { DULL_COLOR } from '../hooks/useFolderColors'
+
+type SortOrder = 'name-az' | 'name-za' | 'modified-new' | 'modified-old' | 'created-new' | 'created-old'
 
 interface SidebarProps {
   fileTree: FileTreeNode[]
@@ -21,8 +23,18 @@ interface SidebarProps {
   clipboardPath: string | null
   onCopy: (path: string) => void
   onPaste: (destFolder: string) => void
-  onCollapse?: () => void
   onConfirm?: (config: ModalConfig) => Promise<boolean>
+  // Git sync props (managed by useGitSync in App.tsx)
+  isRepo: boolean
+  hasChanges: boolean
+  syncing: boolean
+  isProcessing: boolean
+  showSynced: boolean
+  onSync: () => void
+  // Multi-select
+  selectedPaths: Set<string>
+  onSelectionChange: (paths: Set<string>) => void
+  onDeleteItems: (items: Array<{ path: string; type: 'file' | 'folder' }>) => Promise<void>
   style?: React.CSSProperties
   className?: string
 }
@@ -34,6 +46,29 @@ type CtxMenu = { x: number; y: number; node: FileTreeNode | null } | null
 function pathJoin(parent: string, name: string) {
   const sep = parent.includes('\\') ? '\\' : '/'
   return `${parent}${sep}${name}`
+}
+
+// ── Multi-select helpers (defined outside component to avoid re-creation) ──
+function flattenVisible(nodes: FileTreeNode[], expandedSet: Set<string>): FileTreeNode[] {
+  const result: FileTreeNode[] = []
+  for (const node of nodes) {
+    result.push(node)
+    if (node.type === 'folder' && expandedSet.has(node.path) && node.children) {
+      result.push(...flattenVisible(node.children, expandedSet))
+    }
+  }
+  return result
+}
+
+function findNodeInTree(nodes: FileTreeNode[], path: string): FileTreeNode | null {
+  for (const node of nodes) {
+    if (node.path === path) return node
+    if (node.children) {
+      const found = findNodeInTree(node.children, path)
+      if (found) return found
+    }
+  }
+  return null
 }
 
 export default function Sidebar({
@@ -54,12 +89,19 @@ export default function Sidebar({
   clipboardPath,
   onCopy,
   onPaste,
-  onCollapse,
   onConfirm,
+  isRepo,
+  hasChanges,
+  syncing,
+  isProcessing,
+  showSynced,
+  onSync,
+  selectedPaths,
+  onSelectionChange,
+  onDeleteItems,
   style,
   className,
 }: SidebarProps) {
-  console.log('[Sidebar] Component rendered, vaultDir:', vaultDir)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [draggingPath, setDraggingPath] = useState<string | null>(null)
   const [dragOverPath, setDragOverPath] = useState<string | null>(null)
@@ -68,93 +110,7 @@ export default function Sidebar({
   const [renamingPath, setRenamingPath] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
   const [ctxMenu, setCtxMenu] = useState<CtxMenu>(null)
-  const [isRepo, setIsRepo] = useState(false)
-  const [hasChanges, setHasChanges] = useState(false)
-  const [syncing, setSyncing] = useState(false)
-  const [isProcessing, setIsProcessing] = useState(false)
-  const [showSynced, setShowSynced] = useState(false)
-
-  // ── Git Status ────────────────────────────────────────────────────────────
-  const refreshGitStatus = useCallback(async () => {
-    if (!vaultDir) return
-    try {
-      const repo = await window.api.gitIsRepo(vaultDir)
-      setIsRepo(repo)
-      if (repo) {
-        const status = await window.api.gitStatus(vaultDir)
-        const lines = status.trim().split('\n').filter((l: string) => l.trim())
-        setHasChanges(lines.length > 0)
-      }
-    } catch {
-      setIsRepo(false)
-    }
-  }, [vaultDir])
-
-  useEffect(() => {
-    console.log(`[Sidebar] Setting up file watcher for vault: ${vaultDir}`)
-    refreshGitStatus()
-
-    // Listen for file changes and refresh status
-    let processingTimeout: NodeJS.Timeout | null = null
-    console.log('[Sidebar] Attaching onFilesChanged listener')
-    const unsubscribe = window.api.onFilesChanged(async () => {
-      console.log('[Sidebar] *** FILES CHANGED EVENT FIRED ***')
-      if (processingTimeout) clearTimeout(processingTimeout)
-      setIsProcessing(true)
-      console.log('[Sidebar] isProcessing = true, waiting 1 second before refresh')
-
-      // Keep processing state visible for at least 1 second for user feedback
-      processingTimeout = setTimeout(async () => {
-        console.log('[Sidebar] Calling refreshGitStatus...')
-        await refreshGitStatus()
-        setIsProcessing(false)
-        console.log('[Sidebar] Processing cleared, status refreshed')
-        processingTimeout = null
-      }, 1000)
-    })
-    console.log('[Sidebar] onFilesChanged listener attached')
-
-    // Also refresh every 30 seconds as fallback
-    const interval = setInterval(() => refreshGitStatus(), 30000)
-
-    return () => {
-      console.log('[Sidebar] Cleaning up file watcher listeners')
-      if (processingTimeout) clearTimeout(processingTimeout)
-      unsubscribe()
-      clearInterval(interval)
-    }
-  }, [vaultDir])
-
-  const handleSync = async () => {
-    if (syncing || !vaultDir) return
-    setSyncing(true)
-    try {
-      const now = new Date()
-      const year = now.getFullYear()
-      const month = String(now.getMonth() + 1).padStart(2, '0')
-      const day = String(now.getDate()).padStart(2, '0')
-      const hours = String(now.getHours()).padStart(2, '0')
-      const mins = String(now.getMinutes()).padStart(2, '0')
-      const secs = String(now.getSeconds()).padStart(2, '0')
-      const timestamp = `${year}-${month}-${day} ${hours}:${mins}:${secs}`
-      console.log('[Sidebar] Starting git sync...')
-      await window.api.gitSync(vaultDir, `vault sync: ${timestamp}`)
-      console.log('[Sidebar] Git sync completed')
-      // Wait a moment for git operations to fully complete
-      await new Promise(resolve => setTimeout(resolve, 500))
-      await refreshGitStatus()
-      console.log('[Sidebar] Git status refreshed')
-      // Show "Synced" confirmation for 2 seconds
-      setShowSynced(true)
-      setTimeout(() => setShowSynced(false), 2000)
-    } catch (error) {
-      console.error('[Sidebar] Sync error:', error)
-      // Still refresh status even on error
-      await refreshGitStatus()
-    } finally {
-      setSyncing(false)
-    }
-  }
+  const [lastSelectedPath, setLastSelectedPath] = useState<string | null>(null)
 
   // ── Folder toggle ──────────────────────────────────────────────────────────
   const toggleFolder = (path: string) => {
@@ -163,6 +119,40 @@ export default function Sidebar({
       next.has(path) ? next.delete(path) : next.add(path)
       return next
     })
+  }
+
+  // ── Multi-select ───────────────────────────────────────────────────────────
+  const handleNodeClick = (e: React.MouseEvent, node: FileTreeNode, defaultAction: () => void) => {
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault()
+      const next = new Set(selectedPaths)
+      next.has(node.path) ? next.delete(node.path) : next.add(node.path)
+      onSelectionChange(next)
+      setLastSelectedPath(node.path)
+    } else if (e.shiftKey && lastSelectedPath) {
+      e.preventDefault()
+      const flat = flattenVisible(fileTree, expanded)
+      const lastIdx = flat.findIndex((n) => n.path === lastSelectedPath)
+      const thisIdx = flat.findIndex((n) => n.path === node.path)
+      if (lastIdx >= 0 && thisIdx >= 0) {
+        const [from, to] = lastIdx <= thisIdx ? [lastIdx, thisIdx] : [thisIdx, lastIdx]
+        onSelectionChange(new Set(flat.slice(from, to + 1).map((n) => n.path)))
+      }
+    } else {
+      // Normal click: clear multi-select, select this item, run default action
+      onSelectionChange(new Set([node.path]))
+      setLastSelectedPath(node.path)
+      defaultAction()
+    }
+  }
+
+  const handleDeleteSelected = () => {
+    if (selectedPaths.size === 0) return
+    const items = Array.from(selectedPaths).map((path) => {
+      const node = findNodeInTree(fileTree, path)
+      return { path, type: (node?.type ?? 'file') as 'file' | 'folder' }
+    })
+    onDeleteItems(items)
   }
 
   // ── Create ────────────────────────────────────────────────────────────────
@@ -363,9 +353,9 @@ export default function Sidebar({
             </div>
           ) : (
             <div
-              className={`sidebar-folder-row${isDragTarget ? ' drag-over' : ''}${draggingPath === node.path ? ' dragging' : ''}`}
+              className={`sidebar-folder-row${isDragTarget ? ' drag-over' : ''}${draggingPath === node.path ? ' dragging' : ''}${selectedPaths.has(node.path) ? ' selected' : ''}`}
               style={{ paddingLeft: `${indent}px` }}
-              onClick={() => toggleFolder(node.path)}
+              onClick={(e) => handleNodeClick(e, node, () => toggleFolder(node.path))}
               onContextMenu={(e) => openCtxMenu(e, node)}
               draggable
               onDragStart={(e) => handleDragStart(e, node.path)}
@@ -404,9 +394,9 @@ export default function Sidebar({
     ) : (
       <div
         key={node.path}
-        className={`sidebar-note${node.path === activeNotePath ? ' active' : ''}${draggingPath === node.path ? ' dragging' : ''}`}
+        className={`sidebar-note${node.path === activeNotePath ? ' active' : ''}${selectedPaths.has(node.path) ? ' selected' : ''}${draggingPath === node.path ? ' dragging' : ''}`}
         style={{ paddingLeft: `${indent}px` }}
-        onClick={() => onOpenNote(node.path)}
+        onClick={(e) => handleNodeClick(e, node, () => onOpenNote(node.path))}
         onContextMenu={(e) => openCtxMenu(e, node)}
         draggable
         onDragStart={(e) => handleDragStart(e, node.path)}
@@ -428,11 +418,32 @@ export default function Sidebar({
   const vaultLabel = vaultDir.split(/[/\\]/).pop() || vaultDir
 
   return (
-    <div className={`sidebar${className ? ` ${className}` : ''}`} onClick={() => setCtxMenu(null)} style={style}>
+    <div
+      className={`sidebar${className ? ` ${className}` : ''}`}
+      onClick={(e) => {
+        setCtxMenu(null)
+        // Clear selection when clicking sidebar background (not a tree node)
+        if (e.target === e.currentTarget) onSelectionChange(new Set())
+      }}
+      style={style}
+    >
       {/* ── Header ── */}
       <div className="sidebar-header">
         <h2 className="sidebar-title">Noted</h2>
         <div className="sidebar-actions">
+          {/* Multi-select delete — shown when 2+ items selected */}
+          {selectedPaths.size > 1 && (
+            <button
+              className="sidebar-btn icon-btn delete-btn multi-delete-btn"
+              onClick={(e) => { e.stopPropagation(); handleDeleteSelected() }}
+              title={`Delete ${selectedPaths.size} selected items`}
+            >
+              <svg width="11" height="12" viewBox="0 0 11 12" fill="none">
+                <path d="M1 3h9M4 3V2h3v1M2 3l.7 7.5A.5.5 0 003.2 11h4.6a.5.5 0 00.5-.5L9 3" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+              <span style={{ fontSize: '10px', lineHeight: 1 }}>{selectedPaths.size}</span>
+            </button>
+          )}
           {onDeleteNote && activeNoteName && (
             <button
               className="sidebar-btn icon-btn delete-btn"
@@ -468,24 +479,18 @@ export default function Sidebar({
               <line x1="5.5" y1="8" x2="8.5" y2="8" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
             </svg>
           </button>
-          {/* Collapse Sidebar */}
-          {onCollapse && (
-            <button
-              className="sidebar-btn icon-btn sidebar-collapse-btn"
-              onClick={(e) => { e.stopPropagation(); onCollapse() }}
-              title="Collapse sidebar"
-            >
-              ⟨
-            </button>
-          )}
         </div>
       </div>
+
 
       {/* ── File Tree ── */}
       <div
         className={`sidebar-notes${dragOverPath === '__root__' ? ' drag-over-root' : ''}`}
         onDragOver={(e) => handleDragOver(e, '__root__')}
         onDrop={(e) => handleDrop(e, vaultDir)}
+        onClick={(e) => {
+          if (e.target === e.currentTarget) onSelectionChange(new Set())
+        }}
         onContextMenu={(e) => {
           // Only fire if the click is on the empty area itself, not on a child node
           if (e.target === e.currentTarget) {
@@ -513,7 +518,7 @@ export default function Sidebar({
         {isRepo && (
           <button
             className={`sidebar-btn sync-btn ${hasChanges ? 'has-changes' : ''} ${syncing ? 'syncing' : ''} ${isProcessing ? 'processing' : ''}`}
-            onClick={handleSync}
+            onClick={onSync}
             disabled={syncing || isProcessing || !hasChanges}
             title={isProcessing ? 'Processing changes...' : hasChanges ? 'Sync to GitHub' : 'No changes to sync'}
           >
@@ -598,6 +603,17 @@ export default function Sidebar({
               >
                 Delete Folder
               </div>
+              {selectedPaths.size > 1 && (
+                <>
+                  <div className="context-menu-separator" />
+                  <div
+                    className="context-menu-item danger"
+                    onClick={() => { handleDeleteSelected(); setCtxMenu(null) }}
+                  >
+                    Delete Selected ({selectedPaths.size})
+                  </div>
+                </>
+              )}
             </>
           ) : (
             <>
@@ -633,6 +649,17 @@ export default function Sidebar({
               >
                 Delete
               </div>
+              {selectedPaths.size > 1 && (
+                <>
+                  <div className="context-menu-separator" />
+                  <div
+                    className="context-menu-item danger"
+                    onClick={() => { handleDeleteSelected(); setCtxMenu(null) }}
+                  >
+                    Delete Selected ({selectedPaths.size})
+                  </div>
+                </>
+              )}
             </>
           )}
         </div>

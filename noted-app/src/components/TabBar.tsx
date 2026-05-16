@@ -10,14 +10,11 @@ interface TabBarProps {
   activeIndex: number
   onTabClick: (index: number) => void
   onTabClose: (index: number) => void
+  // For context menu only
   onNewNote: () => void
   onNewFolder: () => void
   clipboardPath: string | null
   onPaste: () => void
-  viewMode: 'editor' | 'graph'
-  onSetViewMode: (mode: 'editor' | 'graph') => void
-  onSearch: () => void
-  onRefreshGraph: () => void
 }
 
 type CtxMenu = { x: number; y: number } | null
@@ -31,10 +28,6 @@ export default function TabBar({
   onNewFolder,
   clipboardPath,
   onPaste,
-  viewMode,
-  onSetViewMode,
-  onSearch,
-  onRefreshGraph,
 }: TabBarProps) {
   const [ctxMenu, setCtxMenu] = useState<CtxMenu>(null)
 
@@ -72,43 +65,6 @@ export default function TabBar({
             </button>
           </div>
         ))}
-      </div>
-      <button className="tab-new" onClick={onNewNote} title="New Note">
-        +
-      </button>
-
-      {/* Toolbar buttons */}
-      <div className="tab-toolbar">
-        <button
-          className="toolbar-btn search-btn"
-          onClick={onSearch}
-          title="Search (Ctrl+P)"
-        >
-          Search
-        </button>
-        {viewMode === 'graph' && (
-          <button
-            className="toolbar-btn"
-            onClick={onRefreshGraph}
-            title="Refresh graph"
-          >
-            ↻
-          </button>
-        )}
-        <button
-          className={`toolbar-btn ${viewMode === 'editor' ? 'active' : ''}`}
-          onClick={() => onSetViewMode('editor')}
-          title="Editor"
-        >
-          Edit
-        </button>
-        <button
-          className={`toolbar-btn ${viewMode === 'graph' ? 'active' : ''}`}
-          onClick={() => onSetViewMode('graph')}
-          title="Graph View (Ctrl+G)"
-        >
-          Graph
-        </button>
       </div>
 
       {/* Right-click context menu */}

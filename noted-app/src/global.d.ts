@@ -25,6 +25,11 @@ declare global {
       // File watcher events
       onFilesChanged: (callback: () => void) => () => void
 
+      // Menu events
+      onMenuNewNote: (callback: () => void) => () => void
+      onMenuOpenSettings: (callback: () => void) => () => void
+      onMenuSetSortOrder: (callback: (order: string) => void) => () => void
+
       // Git operations
       isGitRepo: (vaultDir: string) => Promise<boolean>
       gitIsRepo: (vaultDir: string) => Promise<boolean>
@@ -38,6 +43,10 @@ declare global {
 
       // Window
       setTitle: (title: string) => Promise<void>
+      windowMinimize: () => Promise<void>
+      windowToggleMaximize: () => Promise<void>
+      windowClose: () => Promise<void>
+      windowIsMaximized: () => Promise<boolean>
       confirm: (message: string) => Promise<boolean>
 
       // Image handling

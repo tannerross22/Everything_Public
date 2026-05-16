@@ -31,20 +31,259 @@ body {
 /* ── App Layout ── */
 .app {
   display: flex;
+  flex-direction: column;
   height: 100vh;
   width: 100vw;
 }
 
-/* ── Sidebar ── */
-.sidebar {
-  /* width set by inline style from App.tsx */
+/* ── Custom Title Bar ── */
+.title-bar {
+  display: flex;
+  align-items: stretch;
+  height: 38px;
+  min-height: 38px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  -webkit-app-region: drag;
+  user-select: none;
+}
+
+/* Sidebar toggle button — left of tabs, flush to top-left corner */
+.title-rail-btn {
+  width: 38px;
+  min-width: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+  border-right: 1px solid var(--border);
+  -webkit-app-region: no-drag;
+  flex-shrink: 0;
+}
+
+.title-rail-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+/* Tabs section — fills remaining space, acts as drag region */
+.title-tabs {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  -webkit-app-region: drag;
+}
+
+/* Tab bar inside title bar — flush to top edge, constrained width */
+.title-tabs .tab-bar {
+  height: 100%;
+  min-height: unset;
+  background: transparent;
+  border-bottom: none;
+  padding: 0 4px;
+  align-items: stretch;
+  /* Critical: let this shrink so it doesn't push window controls off-screen */
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
+  /* Must be no-drag so scroll wheel events reach the tabs-container */
+  -webkit-app-region: no-drag;
+}
+
+/* Scrollable tabs strip — hidden scrollbar, wheel/trackpad still works */
+.title-tabs .tabs-container {
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;        /* Firefox */
+  -ms-overflow-style: none;     /* IE/Edge */
+  -webkit-app-region: no-drag;
+}
+
+.title-tabs .tabs-container::-webkit-scrollbar {
+  display: none;                /* Chrome/Safari/Electron */
+}
+
+/* Tabs inside title bar fill the full height, flush to top */
+.title-tabs .tab {
+  align-self: stretch;
+  height: unset;
+  margin-top: 0;
+  -webkit-app-region: no-drag;
+}
+
+/* Right controls: action buttons + window chrome, flush to top-right */
+.title-controls {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  padding: 0 0 0 4px;
+  -webkit-app-region: no-drag;
+  flex-shrink: 0;
+}
+
+.title-action-btn {
+  width: 32px;
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  border-radius: 4px;
+  font-size: 1.1rem;
+  font-weight: 300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 4px 1px;
+  transition: color 0.15s, background 0.15s;
+}
+
+.title-action-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.title-action-btn.active {
+  color: var(--accent);
+}
+
+/* Separator between action buttons and window controls */
+.win-ctrl-sep {
+  width: 1px;
+  background: var(--border);
+  margin: 6px 4px;
+  align-self: stretch;
+}
+
+/* Window control buttons (min/restore/close) — full height, flush to top */
+.win-ctrl {
+  width: 42px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s, background 0.15s;
+}
+
+.win-ctrl:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.win-ctrl-close:hover {
+  color: #fff;
+  background: #e81123;
+}
+
+/* ── Body Row (below title bar) ── */
+.body-row {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* ── Persistent Left Rail ── */
+.app-rail {
+  width: 38px;
+  min-width: 38px;
   background: var(--bg-secondary);
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  align-items: center;
+  padding-top: 8px;
+  gap: 4px;
+  flex-shrink: 0;
+  /* Rail is the window drag handle — sync button overrides with no-drag */
+  -webkit-app-region: drag;
+  user-select: none;
+}
+
+/* Compact sync button in rail */
+.rail-sync-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  background: var(--bg-surface);
+  cursor: pointer;
+  position: relative;
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  -webkit-app-region: no-drag;
+}
+
+/* Spinning indicator (::before circle trick) */
+.rail-sync-btn::before {
+  content: '';
+  display: block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--text-dim);
+  border-right-color: transparent;
+  border-radius: 50%;
+}
+
+.rail-sync-btn:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.rail-sync-btn.has-changes {
+  border-color: rgba(249, 226, 175, 0.5);
+  background: rgba(249, 226, 175, 0.12);
+}
+
+.rail-sync-btn.has-changes::before {
+  border-color: #f9e2af;
+  border-right-color: transparent;
+}
+
+.rail-sync-btn.syncing::before,
+.rail-sync-btn.processing::before {
+  border-color: var(--accent);
+  border-right-color: transparent;
+  animation: spinCircle 0.8s linear infinite;
+}
+
+.rail-sync-btn.synced::before {
+  border-color: var(--success);
+  border-right-color: transparent;
+}
+
+.rail-sync-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+/* ── Body Content (sidebar + resize + editor) ── */
+.body-content {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* ── Sidebar ── */
+.sidebar {
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
   transition: width 0.2s ease;
   flex-shrink: 0;
+  overflow: hidden;
 }
 
 .sidebar.sidebar-resizing {
@@ -63,37 +302,6 @@ body {
 
 .resize-handle:hover {
   background: var(--accent);
-}
-
-/* ── Sidebar Collapse Button ── */
-.sidebar-collapse-btn {
-  font-size: 0.9rem;
-}
-
-/* ── Sidebar Expand Button ── */
-.sidebar-expand-btn {
-  position: absolute;
-  left: 0;
-  top: 12px;
-  width: 24px;
-  height: 24px;
-  padding: 0;
-  border: 1px solid var(--border);
-  background: var(--bg-surface);
-  color: var(--text-dim);
-  cursor: pointer;
-  border-radius: 4px;
-  transition: all 0.15s;
-  font-size: 1rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 100;
-}
-
-.sidebar-expand-btn:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
 }
 
 .sidebar-header {
@@ -185,6 +393,19 @@ body {
   opacity: 0.35;
 }
 
+.sidebar-note.selected {
+  background: rgba(203, 166, 247, 0.12);
+  outline: 1px solid rgba(203, 166, 247, 0.25);
+  outline-offset: -1px;
+}
+
+/* Active takes priority; still show a faint selection ring */
+.sidebar-note.active.selected {
+  background: var(--bg-surface);
+  outline: 1px solid rgba(203, 166, 247, 0.4);
+  outline-offset: -1px;
+}
+
 /* ── File tree ── */
 .sidebar-folder-row {
   display: flex;
@@ -211,6 +432,12 @@ body {
 
 .sidebar-folder-row.dragging {
   opacity: 0.35;
+}
+
+.sidebar-folder-row.selected {
+  background: rgba(203, 166, 247, 0.12);
+  outline: 1px solid rgba(203, 166, 247, 0.25);
+  outline-offset: -1px;
 }
 
 .sidebar-notes.drag-over-root {
@@ -461,6 +688,7 @@ body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  min-width: 0;
 }
 
 /* ── Graph View ── */
@@ -830,6 +1058,14 @@ body {
 
 .delete-btn:hover {
   background: rgba(243, 139, 168, 0.15) !important;
+}
+
+.multi-delete-btn {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0 5px !important;
+  width: auto !important;
 }
 
 /* ── Search Overlay ── */
@@ -1233,7 +1469,7 @@ kbd {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 0 12px;
+  padding: 0 10px;
   height: 28px;
   background: var(--bg-surface);
   border: 1px solid var(--border);
@@ -1241,9 +1477,10 @@ kbd {
   cursor: pointer;
   user-select: none;
   transition: all 0.15s;
-  min-width: 120px;
-  max-width: 200px;
+  min-width: 80px;
+  max-width: 160px;
   border-bottom: none;
+  flex-shrink: 0;  /* tabs don't compress — they scroll instead */
 }
 
 .tab:hover {
