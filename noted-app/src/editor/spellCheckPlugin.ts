@@ -2,48 +2,36 @@ import { $prose } from '@milkdown/utils'
 import { Decoration, DecorationSet } from '@milkdown/prose/view'
 import { Plugin, PluginKey } from '@milkdown/prose/state'
 
-interface SpellCheckCache {
-  [word: string]: boolean
+let hunspellChecker: any = null
+let isHunspellReady = false
+
+export function setHunspellChecker(checker: any) {
+  hunspellChecker = checker
+  isHunspellReady = !!checker
 }
 
-let spellCheckCache: SpellCheckCache = {}
-let pendingChecks = new Set<string>()
-
-async function checkWordWithLanguageTool(word: string): Promise<boolean> {
-  const cacheKey = word.toLowerCase()
-  if (cacheKey in spellCheckCache) {
-    return spellCheckCache[cacheKey]
+function isWordMisspelled(word: string): boolean {
+  // Don't check if hunspell isn't ready yet
+  if (!hunspellChecker || !isHunspellReady) {
+    return false
   }
 
+  if (!word || word.length === 0) return false
+
   try {
-    const response = await fetch('https://api.languagetool.org/v2/check', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: new URLSearchParams({
-        text: word,
-        language: 'en-US',
-        disabledRules: 'CONTRACTIONS',
-      }).toString(),
-    })
-
-    if (!response.ok) {
-      spellCheckCache[cacheKey] = true
-      return true
-    }
-
-    const data = await response.json()
-    const isCorrect = !data.matches || data.matches.length === 0
-    spellCheckCache[cacheKey] = isCorrect
-    return isCorrect
-  } catch {
-    spellCheckCache[cacheKey] = true
-    return true
+    // Use testSpelling() method from hunspell-wasm
+    // Returns true if the word is spelled correctly
+    const isCorrect = hunspellChecker.testSpelling(word)
+    return !isCorrect
+  } catch (error) {
+    console.warn(`[SpellCheck] Error checking word "${word}":`, error)
+    return false
   }
 }
 
 function findMisspelledWords(doc: any): DecorationSet {
+  if (!hunspellChecker || !isHunspellReady) return DecorationSet.empty
+
   const decorations: Decoration[] = []
 
   doc.descendants((node: any, pos: number) => {
@@ -55,24 +43,16 @@ function findMisspelledWords(doc: any): DecorationSet {
 
     while ((match = wordRegex.exec(text)) !== null) {
       const word = match[0]
-      const cacheKey = word.toLowerCase()
+      if (isWordMisspelled(word)) {
+        const from = pos + match.index
+        const to = from + word.length
 
-      // Check cache first
-      if (cacheKey in spellCheckCache) {
-        if (!spellCheckCache[cacheKey]) {
-          const from = pos + match.index
-          const to = from + word.length
-          decorations.push(
-            Decoration.inline(from, to, {
-              class: 'spell-error',
-              title: `Misspelled: ${word}`,
-            })
-          )
-        }
-      } else if (!pendingChecks.has(cacheKey)) {
-        // Queue this word for checking
-        pendingChecks.add(cacheKey)
-        checkWordWithLanguageTool(word)
+        decorations.push(
+          Decoration.inline(from, to, {
+            class: 'spell-error',
+            title: `Misspelled: ${word}`,
+          })
+        )
       }
     }
   })

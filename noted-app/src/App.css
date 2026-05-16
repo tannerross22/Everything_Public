@@ -366,6 +366,24 @@ body {
   padding: 8px 0;
 }
 
+/* Scrollbar styling */
+.sidebar-notes::-webkit-scrollbar {
+  width: 8px;
+}
+
+.sidebar-notes::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.sidebar-notes::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 4px;
+}
+
+.sidebar-notes::-webkit-scrollbar-thumb:hover {
+  background: var(--text-secondary);
+}
+
 .sidebar-note {
   padding-top: 5px;
   padding-bottom: 5px;

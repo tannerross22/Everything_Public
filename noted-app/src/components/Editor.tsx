@@ -7,11 +7,16 @@ import { history } from '@milkdown/plugin-history'
 import { listener, listenerCtx } from '@milkdown/plugin-listener'
 import { nord } from '@milkdown/theme-nord'
 import { createWikiLinkPlugin } from '../editor/wikiLinkPlugin'
-import { spellCheckPlugin } from '../editor/spellCheckPlugin'
-import { useLanguageTool } from '../hooks/useLanguageTool'
-import { generatePredictiveSuggestions } from '../utils/spellSuggest'
+import { spellCheckPlugin, setHunspellChecker } from '../editor/spellCheckPlugin'
+import { useHunspell, onHunspellReady } from '../hooks/useHunspell'
 import EditorContextMenu from './EditorContextMenu'
 import '@milkdown/theme-nord/style.css'
+
+// Register callback to set hunspell checker when ready
+onHunspellReady((checker) => {
+  console.log('[Editor module] Hunspell is ready, setting spell checker')
+  setHunspellChecker(checker)
+})
 
 interface EditorProps {
   content: string
@@ -29,7 +34,7 @@ export default function Editor({ content, onChange, noteId, onLinkClick, vaultDi
   const editorInstanceRef = useRef<MilkdownEditor | null>(null)
   const initialLoadRef = useRef(true)
   const suggestionCacheRef = useRef<Map<string, string[]>>(new Map())
-  const { checkWord } = useLanguageTool()
+  const { checkWord, isReady: isHunspellReady } = useHunspell()
   const [contextMenu, setContextMenu] = useState<{
     x: number
     y: number
@@ -218,16 +223,14 @@ export default function Editor({ content, onChange, noteId, onLinkClick, vaultDi
       // Check cache first for instant suggestions
       let suggestions: string[] = []
       const cacheKey = wordToCheck.toLowerCase()
+
       if (wordToCheck && !/\s/.test(wordToCheck)) {
         if (suggestionCacheRef.current.has(cacheKey)) {
           suggestions = suggestionCacheRef.current.get(cacheKey) || []
-        } else {
-          // No cache hit, show predictive suggestions immediately
-          suggestions = generatePredictiveSuggestions(wordToCheck)
         }
       }
 
-      // Show menu immediately with cached or predictive suggestions
+      // Show menu immediately with cached suggestions (or empty if not cached yet)
       setContextMenu({
         x: e.clientX,
         y: e.clientY,
@@ -237,16 +240,15 @@ export default function Editor({ content, onChange, noteId, onLinkClick, vaultDi
         wordEnd,
       })
 
-      // Fetch fresh suggestions in the background if not cached
+      // If not cached, fetch API suggestions in the background
+      // (spell check plugin may have already started this, but fetch again to be sure)
       if (wordToCheck && !/\s/.test(wordToCheck) && !suggestionCacheRef.current.has(cacheKey)) {
         checkWord(wordToCheck).then((newSuggestions) => {
           suggestionCacheRef.current.set(cacheKey, newSuggestions)
-          // Update context menu with fresh suggestions if it's still open and has no API suggestions
+          // Update context menu with API suggestions if it's still open
           setContextMenu((prev) => {
             if (prev && prev.selectedText === wordToCheck) {
-              // Use API suggestions if available, otherwise keep predictive suggestions
-              const finalSuggestions = newSuggestions.length > 0 ? newSuggestions : prev.suggestions
-              return { ...prev, suggestions: finalSuggestions }
+              return { ...prev, suggestions: newSuggestions }
             }
             return prev
           })
