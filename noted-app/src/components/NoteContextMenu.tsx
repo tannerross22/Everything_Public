@@ -22,37 +22,31 @@ export default function NoteContextMenu({
   const [position, setPosition] = useState({ top: y, left: x })
 
   useEffect(() => {
-    // Delay measurement until after render
-    const timer = requestAnimationFrame(() => {
-      if (menuRef.current) {
-        const menuRect = menuRef.current.getBoundingClientRect()
-        const viewportHeight = window.innerHeight
-        const viewportWidth = window.innerWidth
+    // Estimate menu dimensions (2 items: Rename + Delete)
+    const estimatedMenuHeight = 90
+    const estimatedMenuWidth = 150
 
-        let adjustedTop = y
-        let adjustedLeft = x
+    let adjustedTop = y
+    let adjustedLeft = x
 
-        console.log('[NoteContextMenu] Menu dimensions:', { width: menuRect.width, height: menuRect.height })
-        console.log('[NoteContextMenu] Viewport:', { width: viewportWidth, height: viewportHeight })
-        console.log('[NoteContextMenu] Click position:', { x, y })
+    const viewportHeight = window.innerHeight
+    const viewportWidth = window.innerWidth
 
-        // If menu would go below viewport, position above the click point
-        if (y + menuRect.height > viewportHeight) {
-          adjustedTop = Math.max(0, y - menuRect.height - 8)
-          console.log('[NoteContextMenu] Menu would go off-screen below, adjusting to:', adjustedTop)
-        }
+    // If menu would go below viewport, position above the click point
+    if (y + estimatedMenuHeight > viewportHeight - 10) {
+      adjustedTop = Math.max(10, y - estimatedMenuHeight - 8)
+    }
 
-        // If menu would go right of viewport, position to the left
-        if (x + menuRect.width > viewportWidth) {
-          adjustedLeft = Math.max(0, viewportWidth - menuRect.width - 8)
-          console.log('[NoteContextMenu] Menu would go off-screen right, adjusting to:', adjustedLeft)
-        }
+    // If menu would go right of viewport, position to the left
+    if (x + estimatedMenuWidth > viewportWidth - 10) {
+      adjustedLeft = Math.max(10, x - estimatedMenuWidth - 8)
+    }
 
-        setPosition({ top: adjustedTop, left: adjustedLeft })
-      }
-    })
+    console.log('[NoteContextMenu] Original position:', { y, x })
+    console.log('[NoteContextMenu] Adjusted position:', { top: adjustedTop, left: adjustedLeft })
+    console.log('[NoteContextMenu] Viewport:', { viewportHeight, viewportWidth })
 
-    return () => cancelAnimationFrame(timer)
+    setPosition({ top: adjustedTop, left: adjustedLeft })
   }, [y, x])
 
   useEffect(() => {

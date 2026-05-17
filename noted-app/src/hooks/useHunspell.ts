@@ -88,15 +88,19 @@ export function useHunspell() {
 
   const checkWord = useCallback(
     async (word: string): Promise<string[]> => {
-      if (!checkerRef.current || !isReady) return []
+      if (!checkerRef.current || !isReady) {
+        console.warn('[checkWord] Hunspell not ready for:', word)
+        return []
+      }
 
       try {
         // Use getSpellingSuggestions() from hunspell-wasm
         const suggestions = checkerRef.current.getSpellingSuggestions(word)
+        console.log('[checkWord] Got suggestions for "' + word + '":', suggestions)
         // Return up to 2 suggestions
         return (suggestions || []).slice(0, 2)
       } catch (error) {
-        console.warn('Hunspell getSpellingSuggestions error:', error)
+        console.warn('Hunspell getSpellingSuggestions error for "' + word + '":', error)
         return []
       }
     },

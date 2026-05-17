@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import type { FileTreeNode } from '../types'
 import type { ModalConfig } from '../hooks/useModal'
 import { DULL_COLOR } from '../hooks/useFolderColors'
@@ -111,6 +111,8 @@ export default function Sidebar({
   const [renameValue, setRenameValue] = useState('')
   const [ctxMenu, setCtxMenu] = useState<CtxMenu>(null)
   const [lastSelectedPath, setLastSelectedPath] = useState<string | null>(null)
+  const ctxMenuRef = useRef<HTMLDivElement>(null)
+  const [contextMenuPos, setContextMenuPos] = useState({ top: 0, left: 0 })
 
   // ── Folder toggle ──────────────────────────────────────────────────────────
   const toggleFolder = (path: string) => {
@@ -261,6 +263,52 @@ export default function Sidebar({
     setCtxMenu({ x: e.clientX, y: e.clientY, node })
   }
 
+  // Smart positioning for context menu to avoid going off-screen
+  useEffect(() => {
+    if (!ctxMenu || !ctxMenuRef.current) return
+
+    const timer = requestAnimationFrame(() => {
+      if (ctxMenuRef.current) {
+        const menuRect = ctxMenuRef.current.getBoundingClientRect()
+        const viewportHeight = window.innerHeight
+        const viewportWidth = window.innerWidth
+
+        let adjustedTop = ctxMenu.y
+        let adjustedLeft = ctxMenu.x
+
+        // If menu would go below viewport, position above the click point
+        if (ctxMenu.y + menuRect.height > viewportHeight) {
+          adjustedTop = Math.max(0, ctxMenu.y - menuRect.height - 8)
+        }
+
+        // If menu would go right of viewport, position to the left
+        if (ctxMenu.x + menuRect.width > viewportWidth) {
+          adjustedLeft = Math.max(0, viewportWidth - menuRect.width - 8)
+        }
+
+        setContextMenuPos({ top: adjustedTop, left: adjustedLeft })
+      }
+    })
+
+    return () => cancelAnimationFrame(timer)
+  }, [ctxMenu])
+
+  // Close context menu when clicking outside the sidebar
+  useEffect(() => {
+    if (!ctxMenu) return
+
+    const handleClickOutside = (e: MouseEvent) => {
+      // Check if the click target is inside the sidebar
+      const sidebar = document.querySelector('.sidebar')
+      if (sidebar && !sidebar.contains(e.target as Node)) {
+        setCtxMenu(null)
+      }
+    }
+
+    document.addEventListener('click', handleClickOutside)
+    return () => document.removeEventListener('click', handleClickOutside)
+  }, [ctxMenu])
+
   // ── Drag & Drop ───────────────────────────────────────────────────────────
   const handleDragStart = (e: React.DragEvent, path: string) => {
     e.stopPropagation()
@@ -298,6 +346,58 @@ export default function Sidebar({
     setDraggingPath(null)
     setDragOverPath(null)
   }
+
+  // ── Keyboard shortcuts (Ctrl+C / Ctrl+V) ──────────────────────────────────
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ctrl+C to copy
+      if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
+        // Don't copy if we're in an input field
+        if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+          return
+        }
+        e.preventDefault()
+
+        // Copy first selected item, or active note if nothing selected
+        let pathToCopy: string | null = null
+        if (selectedPaths.size > 0) {
+          pathToCopy = Array.from(selectedPaths)[0]
+        } else if (activeNotePath) {
+          pathToCopy = activeNotePath
+        }
+
+        if (pathToCopy) {
+          onCopy(pathToCopy)
+        }
+      }
+
+      // Ctrl+V to paste
+      if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
+        // Don't paste if we're in an input field
+        if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+          return
+        }
+        e.preventDefault()
+
+        if (!clipboardPath) return
+
+        // Paste to first selected folder, or vault root
+        let pasteTarget = vaultDir
+        if (selectedPaths.size > 0) {
+          const firstSelected = Array.from(selectedPaths)[0]
+          const node = findNodeInTree(fileTree, firstSelected)
+          if (node?.type === 'folder') {
+            pasteTarget = firstSelected
+          }
+        }
+
+        onPaste(pasteTarget)
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [selectedPaths, activeNotePath, clipboardPath, fileTree, vaultDir, onCopy, onPaste])
 
   // ── Inline create input ───────────────────────────────────────────────────
   const renderCreateInput = (depth: number) => (
@@ -530,8 +630,9 @@ export default function Sidebar({
       {/* ── Context Menu ── */}
       {ctxMenu && (
         <div
+          ref={ctxMenuRef}
           className="context-menu"
-          style={{ top: ctxMenu.y, left: ctxMenu.x }}
+          style={{ top: `${contextMenuPos.top}px`, left: `${contextMenuPos.left}px` }}
           onClick={(e) => e.stopPropagation()}
         >
           {ctxMenu.node === null ? (

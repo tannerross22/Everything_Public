@@ -96,13 +96,17 @@ body {
   -webkit-app-region: no-drag;
 }
 
-/* Scrollable tabs strip — hidden scrollbar, wheel/trackpad still works */
+/* Tabs strip — no scrolling, tabs shrink equally */
 .title-tabs .tabs-container {
-  overflow-x: auto;
+  overflow-x: hidden;
   overflow-y: hidden;
   scrollbar-width: none;        /* Firefox */
   -ms-overflow-style: none;     /* IE/Edge */
   -webkit-app-region: no-drag;
+  min-width: 0;
+  display: flex;
+  gap: 2px;
+  flex: 1;
 }
 
 .title-tabs .tabs-container::-webkit-scrollbar {
@@ -115,6 +119,10 @@ body {
   height: unset;
   margin-top: 0;
   -webkit-app-region: no-drag;
+  flex: 1;
+  flex-shrink: 1;
+  min-width: 50px;
+  max-width: none;
 }
 
 /* Right controls: action buttons + window chrome, flush to top-right */
@@ -1498,15 +1506,16 @@ kbd {
   display: flex;
   gap: 2px;
   flex: 1;
-  overflow-x: auto;
+  overflow-x: hidden;
   overflow-y: hidden;
+  min-width: 0;
 }
 
 .tab {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 0 10px;
+  gap: 4px;
+  padding: 0 8px;
   height: 28px;
   background: var(--bg-surface);
   border: 1px solid var(--border);
@@ -1514,10 +1523,10 @@ kbd {
   cursor: pointer;
   user-select: none;
   transition: all 0.15s;
-  min-width: 80px;
-  max-width: 160px;
+  min-width: 60px;
+  flex: 1;
   border-bottom: none;
-  flex-shrink: 0;  /* tabs don't compress — they scroll instead */
+  flex-shrink: 1;  /* tabs shrink equally */
 }
 
 .tab:hover {
@@ -1592,9 +1601,9 @@ kbd {
 
 /* Spell check error decoration */
 .spell-error {
-  text-decoration: wavy red underline;
-  text-underline-offset: 0px;
-  text-decoration-thickness: 1px;
+  text-decoration: wavy #ff5555 underline;
+  text-underline-offset: 1px;
+  text-decoration-thickness: 0.5px;
   position: relative;
   z-index: 1;
 }

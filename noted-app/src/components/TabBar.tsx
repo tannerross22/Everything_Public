@@ -50,6 +50,13 @@ export default function TabBar({
             key={tab.path}
             className={`tab ${index === activeIndex ? 'active' : ''}`}
             onClick={() => onTabClick(index)}
+            onMouseDown={(e) => {
+              // Middle mouse button (button 1) closes the tab
+              if (e.button === 1) {
+                e.preventDefault()
+                onTabClose(index)
+              }
+            }}
             onContextMenu={(e) => e.stopPropagation()}
           >
             <span className="tab-name">{tab.name}</span>

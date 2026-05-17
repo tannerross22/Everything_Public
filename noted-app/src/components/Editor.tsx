@@ -35,6 +35,13 @@ export default function Editor({ content, onChange, noteId, onLinkClick, vaultDi
   const initialLoadRef = useRef(true)
   const suggestionCacheRef = useRef<Map<string, string[]>>(new Map())
   const { checkWord, isReady: isHunspellReady } = useHunspell()
+  const checkWordRef = useRef(checkWord)
+
+  // Keep ref updated with latest checkWord
+  useEffect(() => {
+    checkWordRef.current = checkWord
+  }, [checkWord])
+
   const [contextMenu, setContextMenu] = useState<{
     x: number
     y: number
@@ -243,7 +250,9 @@ export default function Editor({ content, onChange, noteId, onLinkClick, vaultDi
       // If not cached, fetch API suggestions in the background
       // (spell check plugin may have already started this, but fetch again to be sure)
       if (wordToCheck && !/\s/.test(wordToCheck) && !suggestionCacheRef.current.has(cacheKey)) {
-        checkWord(wordToCheck).then((newSuggestions) => {
+        console.log('[handleContextMenu] Calling checkWord for:', wordToCheck)
+        checkWordRef.current(wordToCheck).then((newSuggestions) => {
+          console.log('[handleContextMenu] Got suggestions:', newSuggestions)
           suggestionCacheRef.current.set(cacheKey, newSuggestions)
           // Update context menu with API suggestions if it's still open
           setContextMenu((prev) => {
