@@ -258,26 +258,38 @@ function registerIpcHandlers() {
   ipcMain.handle('vault:create', (_event, vaultDir: string, name: string) => {
     isWriting = true
     const result = createNote(vaultDir, name)
-    setTimeout(() => { isWriting = false }, 200)
+    setTimeout(() => {
+      isWriting = false
+      mainWindow?.webContents.send('vault:files-changed')
+    }, 200)
     return result
   })
 
   ipcMain.handle('vault:delete', (_event, filePath: string) => {
     isWriting = true
     deleteNote(filePath)
-    setTimeout(() => { isWriting = false }, 200)
+    setTimeout(() => {
+      isWriting = false
+      mainWindow?.webContents.send('vault:files-changed')
+    }, 200)
   })
 
   ipcMain.handle('vault:deleteFolder', (_event, folderPath: string) => {
     isWriting = true
     deleteFolder(folderPath)
-    setTimeout(() => { isWriting = false }, 500)
+    setTimeout(() => {
+      isWriting = false
+      mainWindow?.webContents.send('vault:files-changed')
+    }, 500)
   })
 
   ipcMain.handle('vault:rename', (_event, vaultDir: string, oldPath: string, newName: string) => {
     isWriting = true
     const result = renameNote(vaultDir, oldPath, newName)
-    setTimeout(() => { isWriting = false }, 200)
+    setTimeout(() => {
+      isWriting = false
+      mainWindow?.webContents.send('vault:files-changed')
+    }, 200)
     return result
   })
 
