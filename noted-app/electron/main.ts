@@ -223,13 +223,22 @@ function registerIpcHandlers() {
   })
 
   ipcMain.handle('vault:moveNote', (_event, oldPath: string, newFolderPath: string) => {
-    return moveNote(oldPath, newFolderPath)
+    isWriting = true
+    const result = moveNote(oldPath, newFolderPath)
+    setTimeout(() => {
+      isWriting = false
+      mainWindow?.webContents.send('vault:files-changed')
+    }, 200)
+    return result
   })
 
   ipcMain.handle('vault:copyItem', (_event, sourcePath: string, destFolder: string) => {
     isWriting = true
     const result = copyItem(sourcePath, destFolder)
-    setTimeout(() => { isWriting = false }, 500)
+    setTimeout(() => {
+      isWriting = false
+      mainWindow?.webContents.send('vault:files-changed')
+    }, 500)
     return result
   })
 
