@@ -58,14 +58,19 @@ function ensureSyncDir(vaultDir: string): void {
   if (!fs.existsSync(syncDir)) {
     fs.mkdirSync(syncDir, { recursive: true })
   }
-  const gitignorePath = path.join(vaultDir, '.gitignore')
-  let gitignore = ''
-  if (fs.existsSync(gitignorePath)) {
-    gitignore = fs.readFileSync(gitignorePath, 'utf-8')
-  }
-  if (!gitignore.includes('.noted')) {
-    gitignore += '\n.noted/\n'
-    fs.writeFileSync(gitignorePath, gitignore, 'utf-8')
+  // Use .git/info/exclude (local-only, never committed) instead of .gitignore
+  const excludePath = path.join(vaultDir, '.git', 'info', 'exclude')
+  try {
+    let exclude = ''
+    if (fs.existsSync(excludePath)) {
+      exclude = fs.readFileSync(excludePath, 'utf-8')
+    }
+    if (!exclude.includes('.noted')) {
+      exclude += '\n.noted/\n'
+      fs.writeFileSync(excludePath, exclude, 'utf-8')
+    }
+  } catch {
+    // .git/info may not exist in some setups — safe to ignore
   }
 }
 
