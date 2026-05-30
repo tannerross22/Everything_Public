@@ -217,7 +217,7 @@ body {
   user-select: none;
 }
 
-/* Compact sync button in rail */
+/* Compact sync indicator in rail */
 .rail-sync-btn {
   width: 24px;
   height: 24px;
@@ -233,7 +233,6 @@ body {
   -webkit-app-region: no-drag;
 }
 
-/* Spinning indicator (::before circle trick) */
 .rail-sync-btn::before {
   content: '';
   display: block;
@@ -249,18 +248,29 @@ body {
   opacity: 0.5;
 }
 
-.rail-sync-btn.has-changes {
+.rail-sync-btn.has-changes,
+.rail-sync-btn.clean-merge {
   border-color: rgba(249, 226, 175, 0.5);
   background: rgba(249, 226, 175, 0.12);
 }
 
-.rail-sync-btn.has-changes::before {
+.rail-sync-btn.has-changes::before,
+.rail-sync-btn.clean-merge::before {
   border-color: #f9e2af;
   border-right-color: transparent;
 }
 
-.rail-sync-btn.syncing::before,
-.rail-sync-btn.processing::before {
+.rail-sync-btn.has-conflicts {
+  border-color: rgba(238, 92, 92, 0.5);
+  background: rgba(238, 92, 92, 0.12);
+}
+
+.rail-sync-btn.has-conflicts::before {
+  border-color: #ee5c5c;
+  border-right-color: transparent;
+}
+
+.rail-sync-btn.syncing::before {
   border-color: var(--accent);
   border-right-color: transparent;
   animation: spinCircle 0.8s linear infinite;
@@ -269,6 +279,12 @@ body {
 .rail-sync-btn.synced::before {
   border-color: var(--success);
   border-right-color: transparent;
+}
+
+.rail-sync-btn.up-to-date::before {
+  border-color: var(--text-dim);
+  border-right-color: transparent;
+  opacity: 0.4;
 }
 
 .rail-sync-btn:hover:not(:disabled) {
@@ -674,6 +690,103 @@ body {
 @keyframes spinCircle {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
+}
+
+/* ── Vault Sync Button ── */
+.sync-vault-btn {
+  padding: 6px 14px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 80px;
+  height: 28px;
+}
+
+.sync-vault-btn::before {
+  content: '';
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  visibility: hidden;
+  flex-shrink: 0;
+}
+
+.sync-vault-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.sync-vault-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+/* Up to date — subtle */
+.sync-vault-btn.up-to-date,
+.sync-vault-btn.idle {
+  opacity: 0.7;
+}
+
+/* Has changes — yellow accent */
+.sync-vault-btn.has-changes {
+  background: rgba(249, 226, 175, 0.15);
+  color: #f9e2af;
+  border-color: rgba(249, 226, 175, 0.4);
+}
+
+.sync-vault-btn.has-changes:hover:not(:disabled) {
+  background: rgba(249, 226, 175, 0.25);
+  border-color: rgba(249, 226, 175, 0.6);
+}
+
+/* Has conflicts — red warning */
+.sync-vault-btn.has-conflicts {
+  background: rgba(238, 92, 92, 0.15);
+  color: #ee5c5c;
+  border-color: rgba(238, 92, 92, 0.4);
+}
+
+.sync-vault-btn.has-conflicts:hover:not(:disabled) {
+  background: rgba(238, 92, 92, 0.25);
+  border-color: rgba(238, 92, 92, 0.6);
+}
+
+/* Syncing — spinner */
+.sync-vault-btn.syncing::before {
+  visibility: visible;
+  animation: spinCircle 0.8s linear infinite;
+}
+
+.sync-vault-btn.syncing {
+  color: var(--accent);
+  border-color: rgba(137, 180, 250, 0.4);
+}
+
+/* Synced — green success */
+.sync-vault-btn.synced {
+  background: rgba(166, 218, 149, 0.15);
+  color: #a6da95;
+  border-color: rgba(166, 218, 149, 0.4);
+}
+
+/* Error — red flash */
+.sync-vault-btn.error {
+  background: rgba(238, 92, 92, 0.15);
+  color: #ee5c5c;
+  border-color: rgba(238, 92, 92, 0.4);
 }
 
 /* ── Tab Toolbar (buttons in tab bar) ── */

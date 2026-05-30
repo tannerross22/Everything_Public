@@ -1,6 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import { execFile } from 'child_process'
+import crypto from 'crypto'
 
 export interface NoteFileData {
   name: string
@@ -94,6 +95,14 @@ export function buildFileTree(vaultDir: string): FileTreeNode[] {
   }
 
   return walkDir(vaultDir)
+}
+
+/**
+ * Compute SHA256 hash of a file's content
+ */
+export function contentHashFile(filePath: string): string {
+  const content = fs.readFileSync(filePath, 'utf-8')
+  return crypto.createHash('sha256').update(content).digest('hex')
 }
 
 /**
@@ -273,6 +282,43 @@ export function gitStatus(vaultDir: string): Promise<string> {
   })
 }
 
+/**
+ * Check if there are unpulled commits from remote
+ */
+export function hasUnpulledCommits(vaultDir: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    // Fetch first to make sure we have latest remote refs
+    execFile('git', ['fetch', 'origin'], { cwd: vaultDir }, (errFetch) => {
+      if (errFetch) {
+        console.warn(`[hasUnpulledCommits] Fetch failed:`, errFetch.message)
+        return resolve(false)
+      }
+
+      // Get current branch
+      execFile('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: vaultDir }, (errBranch, currentBranch) => {
+        let branch = currentBranch.trim()
+        if (errBranch || branch === 'HEAD') {
+          console.warn(`[hasUnpulledCommits] Could not determine branch`)
+          return resolve(false)
+        }
+
+        // Check if local branch is behind remote
+        // git rev-list --count HEAD..origin/<branch> returns count of commits we're behind
+        execFile('git', ['rev-list', '--count', `HEAD..origin/${branch}`], { cwd: vaultDir }, (err, count) => {
+          if (err) {
+            console.warn(`[hasUnpulledCommits] Error checking commits:`, err.message)
+            return resolve(false)
+          }
+
+          const commitCount = parseInt(count.trim() || '0', 10)
+          console.log(`[hasUnpulledCommits] Found ${commitCount} unpulled commits`)
+          resolve(commitCount > 0)
+        })
+      })
+    })
+  })
+}
+
 export function gitSync(vaultDir: string, message: string): Promise<string> {
   return new Promise((resolve, reject) => {
     console.log(`[gitSync] ========== STARTING SYNC ==========`)
@@ -383,6 +429,129 @@ export function gitSync(vaultDir: string, message: string): Promise<string> {
                 })
               })
             }
+          })
+        })
+      })
+    })
+  })
+}
+
+export function gitPull(vaultDir: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    console.log(`[gitPull] ========== STARTING PULL ==========`)
+    console.log(`[gitPull] Vault: ${vaultDir}`)
+
+    // First, fetch to get all remote refs
+    execFile('git', ['fetch', 'origin'], { cwd: vaultDir }, (errFetch, stdoutFetch, stderrFetch) => {
+      console.log(`[gitPull] git fetch origin completed`)
+      console.log(`[gitPull]   stdout: "${stdoutFetch}"`)
+      console.log(`[gitPull]   stderr: "${stderrFetch}"`)
+      if (errFetch) {
+        console.error(`[gitPull] Error in git fetch:`, errFetch.message)
+        return reject(errFetch)
+      }
+
+      console.log(`[gitPull] >>> Remote refs updated, checking branch state...`)
+
+      // Get current branch name - if detached, attach to proper branch
+      execFile('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: vaultDir }, (errBranch, currentBranch) => {
+        let branch = currentBranch.trim()
+        console.log(`[gitPull] Current branch/HEAD: ${branch}`)
+
+        if (branch === 'HEAD') {
+          console.log(`[gitPull] Detached HEAD state detected, finding a valid branch...`)
+          execFile('git', ['branch', '-r'], { cwd: vaultDir }, (errList, branchList) => {
+            console.log(`[gitPull] Remote branches:\n${branchList}`)
+            let targetBranch = 'master'
+            if (branchList.includes('origin/main')) {
+              targetBranch = 'main'
+            }
+            console.log(`[gitPull] Checking out ${targetBranch}...`)
+            execFile('git', ['checkout', '-B', targetBranch, `origin/${targetBranch}`], { cwd: vaultDir }, (errCheckout) => {
+              if (errCheckout) {
+                console.error(`[gitPull] Error checking out branch:`, errCheckout.message)
+                return reject(errCheckout)
+              }
+              branch = targetBranch
+              continuePull(branch)
+            })
+          })
+        } else {
+          continuePull(branch)
+        }
+
+        function continuePull(branch: string) {
+          console.log(`[gitPull] >>> Pulling remote changes on branch: ${branch}...`)
+          execFile('git', ['pull', 'origin', branch, '--allow-unrelated-histories', '-X', 'theirs'], { cwd: vaultDir }, (err, stdout, stderr) => {
+            console.log(`[gitPull] git pull origin ${branch} completed`)
+            console.log(`[gitPull]   stdout: "${stdout}"`)
+            console.log(`[gitPull]   stderr: "${stderr}"`)
+            if (err) {
+              console.warn(`[gitPull] Warning during pull:`, err.message)
+              execFile('git', ['rebase', '--abort'], { cwd: vaultDir }, () => {
+                console.log(`[gitPull] Aborted any in-progress rebase`)
+              })
+            }
+            console.log(`[gitPull] ========== PULL SUCCESSFUL! ==========`)
+            resolve('Pulled successfully')
+          })
+        }
+      })
+    })
+  })
+}
+
+export function gitPush(vaultDir: string, message: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    console.log(`[gitPush] ========== STARTING PUSH ==========`)
+    console.log(`[gitPush] Vault: ${vaultDir}`)
+    console.log(`[gitPush] Message: ${message}`)
+
+    // Stage all changes
+    execFile('git', ['add', '-A'], { cwd: vaultDir }, (err, stdout, stderr) => {
+      console.log(`[gitPush] git add -A completed`)
+      console.log(`[gitPush]   stdout: "${stdout}"`)
+      console.log(`[gitPush]   stderr: "${stderr}"`)
+      if (err) {
+        console.error(`[gitPush] Error in git add:`, err.message)
+        return reject(err)
+      }
+
+      console.log(`[gitPush] >>> Files staged, creating commit...`)
+
+      // Create commit
+      execFile('git', ['commit', '-m', message], { cwd: vaultDir }, (err2, stdout2, stderr2) => {
+        console.log(`[gitPush] git commit completed`)
+        console.log(`[gitPush]   stdout: "${stdout2}"`)
+        console.log(`[gitPush]   stderr: "${stderr2}"`)
+        if (err2) {
+          console.error(`[gitPush] Error in git commit:`, err2.message)
+          return reject(err2)
+        }
+
+        console.log(`[gitPush] >>> Commit created, pushing to remote...`)
+
+        // Get current branch
+        execFile('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: vaultDir }, (errBranch, currentBranch) => {
+          let branch = currentBranch.trim()
+          if (branch === 'HEAD') {
+            // Default to main if detached
+            branch = 'main'
+          }
+
+          console.log(`[gitPush] Pushing to branch: ${branch}...`)
+
+          // Push to remote
+          execFile('git', ['push', '-u', 'origin', branch, '-v'], { cwd: vaultDir }, (err3, stdout3, stderr3) => {
+            console.log(`[gitPush] git push -u origin ${branch} -v completed`)
+            console.log(`[gitPush]   stdout: "${stdout3}"`)
+            console.log(`[gitPush]   stderr: "${stderr3}"`)
+            if (err3) {
+              console.error(`[gitPush] Error in git push:`, err3.message)
+              return reject(err3)
+            }
+            console.log(`[gitPush] ========== PUSH SUCCESSFUL! ==========`)
+            resolve('Pushed successfully')
           })
         })
       })

@@ -17,6 +17,8 @@ import {
   isGitRepo,
   gitStatus,
   gitSync,
+  gitPull,
+  gitPush,
   gitLog,
   gitInit,
   gitAddRemote,
@@ -25,6 +27,10 @@ import {
   saveImage,
   convertBase64ImagesToFiles,
 } from './fileService'
+import {
+  analyseSyncStatus,
+  executeSync,
+} from './syncService'
 
 let mainWindow: BrowserWindow | null = null
 let fileWatcher: FSWatcher | null = null
@@ -293,6 +299,20 @@ function registerIpcHandlers() {
     return result
   })
 
+  ipcMain.handle('git:pull', async (_event, vaultDir: string) => {
+    const result = await gitPull(vaultDir)
+    // Emit files changed event to refresh UI with any new files from remote
+    if (mainWindow) {
+      mainWindow.webContents.send('vault:files-changed')
+    }
+    return result
+  })
+
+  ipcMain.handle('git:push', async (_event, vaultDir: string, message: string) => {
+    const result = await gitPush(vaultDir, message)
+    return result
+  })
+
   ipcMain.handle('git:log', (_event, vaultDir: string, count: number) => {
     return gitLog(vaultDir, count)
   })
@@ -311,6 +331,19 @@ function registerIpcHandlers() {
 
   ipcMain.handle('git:initialCommit', (_event, vaultDir: string, message: string) => {
     return gitInitialCommit(vaultDir, message)
+  })
+
+  // Vault sync handlers
+  ipcMain.handle('sync:analyseStatus', async (_event, vaultDir: string) => {
+    return analyseSyncStatus(vaultDir)
+  })
+
+  ipcMain.handle('sync:execute', async (_event, vaultDir: string, resolutions?: Record<string, 'keep-local' | 'keep-remote' | 'conflict-note'>) => {
+    const result = await executeSync(vaultDir, resolutions)
+    if (result.success && mainWindow) {
+      mainWindow.webContents.send('vault:files-changed')
+    }
+    return result
   })
 
   // Window controls (for frameless window)

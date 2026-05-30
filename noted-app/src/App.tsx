@@ -74,7 +74,7 @@ function App() {
   }, [notes, openNote, modal, vaultDir, activeNote?.path, createNewNote])
 
   const { nodes, links } = useGraph(notes, vaultDir)
-  const gitSync = useGitSync(vaultDir)
+  const gitSync = useGitSync(vaultDir, refreshNotes)
   const [viewMode, setViewMode] = useState<ViewMode>('editor')
   const [searchVisible, setSearchVisible] = useState(false)
   const [folderColors, setFolderColors] = useState<Record<string, string>>(() => loadFolderColors())
@@ -186,6 +186,13 @@ function App() {
       setActiveTabIndex(activeTabIndex - 1)
     }
   }, [openTabs, activeTabIndex, openNote, clearActiveNote])
+
+  const closeTabByPath = useCallback((path: string) => {
+    const tabIndex = openTabs.findIndex(t => t.path === path)
+    if (tabIndex >= 0) {
+      closeTab(tabIndex)
+    }
+  }, [openTabs, closeTab])
 
   const createNoteInNewTab = useCallback(() => {
     setPromptType('note')
@@ -686,12 +693,18 @@ function App() {
 
         {/* Persistent left rail */}
         <div className="app-rail">
-          {gitSync.isRepo && (
+          {gitSync.isRepo && gitSync.syncStatus !== 'no-remote' && (
             <button
-              className={`rail-sync-btn ${gitSync.hasChanges ? 'has-changes' : ''} ${gitSync.syncing ? 'syncing' : ''} ${gitSync.isProcessing ? 'processing' : ''} ${gitSync.showSynced ? 'synced' : ''}`}
-              onClick={gitSync.handleSync}
-              disabled={gitSync.syncing || gitSync.isProcessing || !gitSync.hasChanges}
-              title={gitSync.isProcessing ? 'Processing...' : gitSync.hasChanges ? 'Sync to GitHub' : 'Up to date'}
+              className={`rail-sync-btn ${gitSync.syncStatus}`}
+              onClick={() => gitSync.handleSync()}
+              disabled={gitSync.syncStatus === 'syncing' || gitSync.isProcessing}
+              title={
+                gitSync.syncStatus === 'syncing' ? 'Syncing...'
+                : gitSync.syncStatus === 'has-changes' ? 'Sync vault'
+                : gitSync.syncStatus === 'has-conflicts' ? 'Conflicts detected'
+                : gitSync.syncStatus === 'up-to-date' ? 'Up to date'
+                : 'Sync'
+              }
             />
           )}
         </div>
@@ -712,6 +725,7 @@ function App() {
               onCreateFolder={handleCreateFolder}
               onDeleteFolder={deleteFolder}
               onDeleteNote={activeNote ? deleteCurrentNote : undefined}
+              onCloseTab={closeTabByPath}
               onMoveItem={moveItem}
               onChangeVault={changeVaultDir}
               onRenameNote={renameNote}
@@ -722,11 +736,37 @@ function App() {
               onPaste={handlePaste}
               onConfirm={modal.confirm}
               isRepo={gitSync.isRepo}
-              hasChanges={gitSync.hasChanges}
-              syncing={gitSync.syncing}
+              syncStatus={gitSync.syncStatus}
+              ahead={gitSync.ahead}
+              behind={gitSync.behind}
               isProcessing={gitSync.isProcessing}
-              showSynced={gitSync.showSynced}
-              onSync={gitSync.handleSync}
+              lastMessage={gitSync.lastMessage}
+              lastError={gitSync.lastError}
+              conflictCount={gitSync.conflicts.length}
+              onSync={() => gitSync.handleSync()}
+              onSyncWithConflicts={async () => {
+                // Show conflict resolution modal
+                if (gitSync.conflicts.length === 0) {
+                  gitSync.handleSync()
+                  return
+                }
+
+                const resolutions: Record<string, 'keep-local' | 'keep-remote' | 'conflict-note'> = {}
+
+                for (const conflict of gitSync.conflicts) {
+                  const choice = await modal.confirm({
+                    title: `Conflict: ${conflict.relativePath}`,
+                    message: `This file was edited on both this device and another device.\n\nChoose how to resolve:`,
+                    confirmText: 'Keep Mine',
+                    cancelText: 'Keep Remote',
+                    isDangerous: false,
+                  })
+
+                  resolutions[conflict.relativePath] = choice ? 'keep-local' : 'keep-remote'
+                }
+
+                gitSync.handleSync(resolutions)
+              }}
               selectedPaths={sidebarSelectedPaths}
               onSelectionChange={setSidebarSelectedPaths}
               onDeleteItems={handleDeleteItems}

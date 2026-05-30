@@ -35,11 +35,26 @@ declare global {
       gitIsRepo: (vaultDir: string) => Promise<boolean>
       gitStatus: (vaultDir: string) => Promise<string>
       gitSync: (vaultDir: string, message: string) => Promise<string>
+      gitPull: (vaultDir: string) => Promise<string>
+      gitPush: (vaultDir: string, message: string) => Promise<string>
       gitLog: (vaultDir: string, count: number) => Promise<string>
       gitInit: (vaultDir: string) => Promise<string>
       gitAddRemote: (vaultDir: string, remoteName: string, remoteUrl: string) => Promise<string>
       gitGetRemoteUrl: (vaultDir: string, remoteName?: string) => Promise<string>
       gitInitialCommit: (vaultDir: string, message: string) => Promise<string>
+
+      // Vault sync operations
+      syncAnalyseStatus: (vaultDir: string) => Promise<{
+        state: 'up-to-date' | 'local-only' | 'remote-only' | 'diverged' | 'clean-merge' | 'no-remote'
+        ahead?: number
+        behind?: number
+        conflicts?: Array<{ relativePath: string; localContent: string; remoteContent: string }>
+      }>
+      syncExecute: (vaultDir: string, resolutions?: Record<string, 'keep-local' | 'keep-remote' | 'conflict-note'>) => Promise<{
+        success: boolean
+        message: string
+        conflictsCreated?: string[]
+      }>
 
       // Window
       setTitle: (title: string) => Promise<void>

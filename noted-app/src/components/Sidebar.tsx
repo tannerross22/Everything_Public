@@ -15,6 +15,7 @@ interface SidebarProps {
   onCreateFolder: (fullPath: string) => void
   onDeleteFolder: (folderPath: string) => void
   onDeleteNote?: () => void
+  onCloseTab?: (path: string) => void
   onMoveItem: (oldPath: string, newFolderPath: string) => void
   onChangeVault: () => void
   onRenameNote?: (oldPath: string, newName: string) => Promise<any>
@@ -24,13 +25,17 @@ interface SidebarProps {
   onCopy: (path: string) => void
   onPaste: (destFolder: string) => void
   onConfirm?: (config: ModalConfig) => Promise<boolean>
-  // Git sync props (managed by useGitSync in App.tsx)
+  // Vault sync props
   isRepo: boolean
-  hasChanges: boolean
-  syncing: boolean
+  syncStatus: 'idle' | 'up-to-date' | 'has-changes' | 'has-conflicts' | 'syncing' | 'synced' | 'error' | 'no-remote'
+  ahead: number
+  behind: number
   isProcessing: boolean
-  showSynced: boolean
+  lastMessage: string | null
+  lastError: string | null
+  conflictCount: number
   onSync: () => void
+  onSyncWithConflicts: () => void
   // Multi-select
   selectedPaths: Set<string>
   onSelectionChange: (paths: Set<string>) => void
@@ -81,6 +86,7 @@ export default function Sidebar({
   onCreateFolder,
   onDeleteFolder,
   onDeleteNote,
+  onCloseTab,
   onMoveItem,
   onChangeVault,
   onRenameNote,
@@ -91,11 +97,15 @@ export default function Sidebar({
   onPaste,
   onConfirm,
   isRepo,
-  hasChanges,
-  syncing,
+  syncStatus,
+  ahead,
+  behind,
   isProcessing,
-  showSynced,
+  lastMessage,
+  lastError,
+  conflictCount,
   onSync,
+  onSyncWithConflicts,
   selectedPaths,
   onSelectionChange,
   onDeleteItems,
@@ -240,20 +250,7 @@ export default function Sidebar({
 
   const handleDeleteNote = async (node: FileTreeNode) => {
     setCtxMenu(null)
-    if (!onDeleteNote) return
-    const confirmed = onConfirm
-      ? await onConfirm({
-          title: 'Delete Note',
-          message: `Delete "${node.name}"? This cannot be undone.`,
-          confirmText: 'Delete',
-          cancelText: 'Cancel',
-          isDangerous: true,
-        })
-      : await window.api.confirm(`Delete "${node.name}"?`)
-    if (confirmed) {
-      await onOpenNote(node.path)
-      onDeleteNote()
-    }
+    await onDeleteItems([{ path: node.path, type: 'file' }])
   }
 
   // ── Context menu ──────────────────────────────────────────────────────────
@@ -615,14 +612,28 @@ export default function Sidebar({
           <div className="folder-icon" />
           {vaultLabel}
         </button>
-        {isRepo && (
+        {isRepo && syncStatus !== 'no-remote' && (
           <button
-            className={`sidebar-btn sync-btn ${hasChanges ? 'has-changes' : ''} ${syncing ? 'syncing' : ''} ${isProcessing ? 'processing' : ''}`}
-            onClick={onSync}
-            disabled={syncing || isProcessing || !hasChanges}
-            title={isProcessing ? 'Processing changes...' : hasChanges ? 'Sync to GitHub' : 'No changes to sync'}
+            className={`sidebar-btn sync-vault-btn ${syncStatus}`}
+            onClick={syncStatus === 'has-conflicts' ? onSyncWithConflicts : onSync}
+            disabled={syncStatus === 'syncing' || isProcessing}
+            title={
+              syncStatus === 'syncing' ? 'Syncing...'
+              : syncStatus === 'synced' ? (lastMessage || 'Synced!')
+              : syncStatus === 'error' ? (lastError || 'Sync failed')
+              : syncStatus === 'has-conflicts' ? `${conflictCount} conflict${conflictCount !== 1 ? 's' : ''} — click to resolve`
+              : syncStatus === 'has-changes'
+                ? `${behind > 0 ? `${behind} to pull` : ''}${behind > 0 && ahead > 0 ? ', ' : ''}${ahead > 0 ? `${ahead} to push` : ''}`
+              : syncStatus === 'up-to-date' ? 'Up to date'
+              : 'Sync vault'
+            }
           >
-            {showSynced ? 'Synced' : 'Sync'}
+            {syncStatus === 'syncing' ? 'Syncing...'
+              : syncStatus === 'synced' ? 'Synced!'
+              : syncStatus === 'error' ? 'Error'
+              : syncStatus === 'has-conflicts' ? 'Conflicts'
+              : syncStatus === 'has-changes' ? 'Sync'
+              : 'Sync'}
           </button>
         )}
       </div>

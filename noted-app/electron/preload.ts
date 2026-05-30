@@ -45,11 +45,17 @@ contextBridge.exposeInMainWorld('api', {
   gitIsRepo: (vaultDir: string): Promise<boolean> => ipcRenderer.invoke('git:isRepo', vaultDir),
   gitStatus: (vaultDir: string): Promise<string> => ipcRenderer.invoke('git:status', vaultDir),
   gitSync: (vaultDir: string, message: string): Promise<string> => ipcRenderer.invoke('git:sync', vaultDir, message),
+  gitPull: (vaultDir: string): Promise<string> => ipcRenderer.invoke('git:pull', vaultDir),
+  gitPush: (vaultDir: string, message: string): Promise<string> => ipcRenderer.invoke('git:push', vaultDir, message),
   gitLog: (vaultDir: string, count: number): Promise<string> => ipcRenderer.invoke('git:log', vaultDir, count),
   gitInit: (vaultDir: string): Promise<string> => ipcRenderer.invoke('git:init', vaultDir),
   gitAddRemote: (vaultDir: string, remoteName: string, remoteUrl: string): Promise<string> => ipcRenderer.invoke('git:addRemote', vaultDir, remoteName, remoteUrl),
   gitGetRemoteUrl: (vaultDir: string, remoteName?: string): Promise<string> => ipcRenderer.invoke('git:getRemoteUrl', vaultDir, remoteName || 'origin'),
   gitInitialCommit: (vaultDir: string, message: string): Promise<string> => ipcRenderer.invoke('git:initialCommit', vaultDir, message),
+
+  // Vault sync operations
+  syncAnalyseStatus: (vaultDir: string) => ipcRenderer.invoke('sync:analyseStatus', vaultDir),
+  syncExecute: (vaultDir: string, resolutions?: Record<string, 'keep-local' | 'keep-remote' | 'conflict-note'>) => ipcRenderer.invoke('sync:execute', vaultDir, resolutions),
 
   // Window
   setTitle: (title: string) => ipcRenderer.invoke('window:setTitle', title),
