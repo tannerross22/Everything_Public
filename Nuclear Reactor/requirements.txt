@@ -1,0 +1,10 @@
+numpy>=1.26
+scipy>=1.11
+pytest>=7.4
+matplotlib>=3.7      # diagnostic plotting
+imageio-ffmpeg>=0.4  # bundled ffmpeg binary for MP4 animation export
+
+# Pulled in during later phases (left here as a forward reference):
+# pandas>=2.0        # time-series logging (Phase 3+)
+# pyarrow>=14.0      # parquet logging backend
+# pyyaml>=6.0        # external parameter files
