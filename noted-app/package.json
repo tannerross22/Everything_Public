@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "build:electron": "tsc -p tsconfig.json",
+    "dist": "npm run build && npm run build:electron && electron-builder",
     "preview": "vite preview"
   },
   "keywords": [],
@@ -17,6 +19,7 @@
     "@milkdown/plugin-history": "^7.21.0",
     "@milkdown/plugin-listener": "^7.21.0",
     "@milkdown/plugin-trailing": "^7.21.0",
+    "@milkdown/plugin-upload": "^7.21.1",
     "@milkdown/preset-commonmark": "^7.21.0",
     "@milkdown/preset-gfm": "^7.21.0",
     "@milkdown/prose": "^7.21.0",
@@ -25,8 +28,10 @@
     "@milkdown/utils": "^7.21.0",
     "chokidar": "^5.0.0",
     "d3": "^7.9.0",
+    "hunspell-wasm": "^0.3.0",
     "react": "^19.2.6",
-    "react-dom": "^19.2.6"
+    "react-dom": "^19.2.6",
+    "typo-js": "^1.3.2"
   },
   "devDependencies": {
     "@types/d3": "^7.4.3",
@@ -34,10 +39,41 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
     "electron": "^42.0.1",
+    "electron-builder": "^25.1.8",
     "esbuild": "^0.28.0",
     "typescript": "^6.0.3",
     "vite": "^8.0.12",
     "vite-plugin-electron": "^0.29.1",
     "vite-plugin-electron-renderer": "^0.14.7"
+  },
+  "build": {
+    "appId": "com.noted.app",
+    "productName": "Noted",
+    "files": [
+      "dist",
+      "dist-electron",
+      "node_modules",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        "portable"
+      ],
+      "icon": "electron/app.png",
+      "sign": null
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Noted"
+    }
   }
 }

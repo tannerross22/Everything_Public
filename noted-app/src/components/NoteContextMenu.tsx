@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { NoteFile } from '../types'
 
 interface NoteContextMenuProps {
@@ -18,6 +18,37 @@ export default function NoteContextMenu({
   onRename,
   onClose,
 }: NoteContextMenuProps) {
+  const menuRef = useRef<HTMLDivElement>(null)
+  const [position, setPosition] = useState({ top: y, left: x })
+
+  useEffect(() => {
+    // Estimate menu dimensions (2 items: Rename + Delete)
+    const estimatedMenuHeight = 90
+    const estimatedMenuWidth = 150
+
+    let adjustedTop = y
+    let adjustedLeft = x
+
+    const viewportHeight = window.innerHeight
+    const viewportWidth = window.innerWidth
+
+    // If menu would go below viewport, position above the click point
+    if (y + estimatedMenuHeight > viewportHeight - 10) {
+      adjustedTop = Math.max(10, y - estimatedMenuHeight - 8)
+    }
+
+    // If menu would go right of viewport, position to the left
+    if (x + estimatedMenuWidth > viewportWidth - 10) {
+      adjustedLeft = Math.max(10, x - estimatedMenuWidth - 8)
+    }
+
+    console.log('[NoteContextMenu] Original position:', { y, x })
+    console.log('[NoteContextMenu] Adjusted position:', { top: adjustedTop, left: adjustedLeft })
+    console.log('[NoteContextMenu] Viewport:', { viewportHeight, viewportWidth })
+
+    setPosition({ top: adjustedTop, left: adjustedLeft })
+  }, [y, x])
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -52,7 +83,11 @@ export default function NoteContextMenu({
   }
 
   return (
-    <div className="context-menu" style={{ top: `${y}px`, left: `${x}px` }}>
+    <div
+      ref={menuRef}
+      className="context-menu"
+      style={{ top: `${position.top}px`, left: `${position.left}px` }}
+    >
       <div
         className="context-menu-item"
         onClick={handleRename}

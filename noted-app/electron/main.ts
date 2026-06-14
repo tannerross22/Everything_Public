@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, Menu } from 'electron'
 import path from 'path'
 import fs from 'fs'
 import { watch, type FSWatcher } from 'chokidar'
@@ -9,14 +9,28 @@ import {
   writeNote,
   createNote,
   deleteNote,
+  deleteFolder,
   renameNote,
   createFolder,
   moveNote,
+  copyItem,
   isGitRepo,
   gitStatus,
   gitSync,
+  gitPull,
+  gitPush,
   gitLog,
+  gitInit,
+  gitAddRemote,
+  gitGetRemoteUrl,
+  gitInitialCommit,
+  saveImage,
+  convertBase64ImagesToFiles,
 } from './fileService'
+import {
+  analyseSyncStatus,
+  executeSync,
+} from './syncService'
 
 let mainWindow: BrowserWindow | null = null
 let fileWatcher: FSWatcher | null = null
@@ -47,15 +61,26 @@ function startWatcher(vaultDir: string) {
     fileWatcher.close()
   }
 
-  fileWatcher = watch(path.join(vaultDir, '**/*.md'), {
+  const watchPath = path.join(vaultDir, '**/*.md')
+  console.log(`[startWatcher] Starting file watcher on: ${watchPath}`)
+
+  fileWatcher = watch(watchPath, {
     ignoreInitial: true,
     awaitWriteFinish: { stabilityThreshold: 300 },
     ignored: ['**/node_modules/**', '**/dist/**', '**/dist-electron/**', '**/.git/**'],
   })
 
-  fileWatcher.on('all', () => {
+  fileWatcher.on('ready', () => {
+    console.log('[FileWatcher] Ready and listening for changes')
+  })
+
+  fileWatcher.on('all', (event, filePath) => {
+    console.log(`[FileWatcher] File event: ${event} on ${filePath}, isWriting: ${isWriting}`)
     if (!isWriting && mainWindow) {
+      console.log('[FileWatcher] → Sending vault:files-changed event')
       mainWindow.webContents.send('vault:files-changed')
+    } else {
+      console.log(`[FileWatcher] → Event blocked (isWriting=${isWriting})`)
     }
   })
 }
@@ -67,11 +92,15 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
-    title: 'Noted',
+    minWidth: 500,
+    minHeight: 400,
+    frame: false,
+    icon: path.join(__dirname, '../electron/app.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
     },
   })
 
@@ -81,6 +110,14 @@ function createWindow() {
     mainWindow.loadFile(path.join(__dirname, '../dist/index.html'))
   }
 
+  // Setup keyboard shortcut for DevTools
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (input.control && input.shift && input.key.toLowerCase() === 'i') {
+      mainWindow?.webContents.toggleDevTools()
+      event.preventDefault()
+    }
+  })
+
   mainWindow.on('closed', () => {
     mainWindow = null
   })
@@ -88,6 +125,67 @@ function createWindow() {
   // Start file watcher with saved vault dir
   const config = loadConfig()
   startWatcher(config.vaultDir)
+
+  // Setup application menu
+  setupMenu()
+}
+
+// ── Application Menu ──
+function setupMenu() {
+  type SortOrder = 'name-az' | 'name-za' | 'modified-new' | 'modified-old' | 'created-new' | 'created-old'
+  const sortOrders: SortOrder[] = ['name-az', 'name-za', 'modified-new', 'modified-old', 'created-new', 'created-old']
+  const sortLabels: Record<SortOrder, string> = {
+    'name-az': 'File name (A to Z)',
+    'name-za': 'File name (Z to A)',
+    'modified-new': 'Modified time (new to old)',
+    'modified-old': 'Modified time (old to new)',
+    'created-new': 'Created time (new to old)',
+    'created-old': 'Created time (old to new)',
+  }
+
+  const template: Electron.MenuItemConstructorOptions[] = [
+    {
+      label: 'File',
+      submenu: [
+        {
+          label: 'New Note',
+          accelerator: 'CmdOrCtrl+N',
+          click: () => {
+            if (mainWindow) {
+              mainWindow.webContents.send('menu:newNote')
+            }
+          },
+        },
+        {
+          label: 'Settings',
+          accelerator: 'CmdOrCtrl+,',
+          click: () => {
+            if (mainWindow) {
+              mainWindow.webContents.send('menu:openSettings')
+            }
+          },
+        },
+        {
+          type: 'separator',
+        },
+        {
+          label: 'Sort',
+          submenu: sortOrders.map((order) => ({
+            label: sortLabels[order],
+            type: 'radio' as const,
+            click: () => {
+              if (mainWindow) {
+                mainWindow.webContents.send('menu:setSortOrder', order)
+              }
+            },
+          })),
+        },
+      ],
+    },
+  ]
+
+  const menu = Menu.buildFromTemplate(template)
+  Menu.setApplicationMenu(menu)
 }
 
 // ── IPC Handlers ──
@@ -125,7 +223,23 @@ function registerIpcHandlers() {
   })
 
   ipcMain.handle('vault:moveNote', (_event, oldPath: string, newFolderPath: string) => {
-    return moveNote(oldPath, newFolderPath)
+    isWriting = true
+    const result = moveNote(oldPath, newFolderPath)
+    setTimeout(() => {
+      isWriting = false
+      mainWindow?.webContents.send('vault:files-changed')
+    }, 200)
+    return result
+  })
+
+  ipcMain.handle('vault:copyItem', (_event, sourcePath: string, destFolder: string) => {
+    isWriting = true
+    const result = copyItem(sourcePath, destFolder)
+    setTimeout(() => {
+      isWriting = false
+      mainWindow?.webContents.send('vault:files-changed')
+    }, 500)
+    return result
   })
 
   ipcMain.handle('vault:read', (_event, filePath: string) => {
@@ -133,29 +247,58 @@ function registerIpcHandlers() {
   })
 
   ipcMain.handle('vault:write', async (_event, filePath: string, content: string) => {
+    console.log(`[vault:write] Writing to ${filePath}`)
     isWriting = true
+    console.log('[vault:write] isWriting = true')
     writeNote(filePath, content)
+    console.log('[vault:write] File written, isWriting will be reset in 200ms')
     // Small delay before re-enabling watcher to avoid self-trigger
-    setTimeout(() => { isWriting = false }, 200)
+    setTimeout(() => {
+      isWriting = false
+      console.log('[vault:write] isWriting = false')
+      // Emit file changed event after write completes
+      if (mainWindow) {
+        console.log('[vault:write] Emitting vault:files-changed event')
+        mainWindow.webContents.send('vault:files-changed')
+      }
+    }, 200)
   })
 
   ipcMain.handle('vault:create', (_event, vaultDir: string, name: string) => {
     isWriting = true
     const result = createNote(vaultDir, name)
-    setTimeout(() => { isWriting = false }, 200)
+    setTimeout(() => {
+      isWriting = false
+      mainWindow?.webContents.send('vault:files-changed')
+    }, 200)
     return result
   })
 
   ipcMain.handle('vault:delete', (_event, filePath: string) => {
     isWriting = true
     deleteNote(filePath)
-    setTimeout(() => { isWriting = false }, 200)
+    setTimeout(() => {
+      isWriting = false
+      mainWindow?.webContents.send('vault:files-changed')
+    }, 200)
+  })
+
+  ipcMain.handle('vault:deleteFolder', (_event, folderPath: string) => {
+    isWriting = true
+    deleteFolder(folderPath)
+    setTimeout(() => {
+      isWriting = false
+      mainWindow?.webContents.send('vault:files-changed')
+    }, 500)
   })
 
   ipcMain.handle('vault:rename', (_event, vaultDir: string, oldPath: string, newName: string) => {
     isWriting = true
     const result = renameNote(vaultDir, oldPath, newName)
-    setTimeout(() => { isWriting = false }, 200)
+    setTimeout(() => {
+      isWriting = false
+      mainWindow?.webContents.send('vault:files-changed')
+    }, 200)
     return result
   })
 
@@ -168,12 +311,78 @@ function registerIpcHandlers() {
     return gitStatus(vaultDir)
   })
 
-  ipcMain.handle('git:sync', (_event, vaultDir: string, message: string) => {
-    return gitSync(vaultDir, message)
+  ipcMain.handle('git:sync', async (_event, vaultDir: string, message: string) => {
+    const result = await gitSync(vaultDir, message)
+    // Emit files changed event to refresh UI with any new files from remote
+    if (mainWindow) {
+      mainWindow.webContents.send('vault:files-changed')
+    }
+    return result
+  })
+
+  ipcMain.handle('git:pull', async (_event, vaultDir: string) => {
+    const result = await gitPull(vaultDir)
+    // Emit files changed event to refresh UI with any new files from remote
+    if (mainWindow) {
+      mainWindow.webContents.send('vault:files-changed')
+    }
+    return result
+  })
+
+  ipcMain.handle('git:push', async (_event, vaultDir: string, message: string) => {
+    const result = await gitPush(vaultDir, message)
+    return result
   })
 
   ipcMain.handle('git:log', (_event, vaultDir: string, count: number) => {
     return gitLog(vaultDir, count)
+  })
+
+  ipcMain.handle('git:init', (_event, vaultDir: string) => {
+    return gitInit(vaultDir)
+  })
+
+  ipcMain.handle('git:addRemote', (_event, vaultDir: string, remoteName: string, remoteUrl: string) => {
+    return gitAddRemote(vaultDir, remoteName, remoteUrl)
+  })
+
+  ipcMain.handle('git:getRemoteUrl', (_event, vaultDir: string, remoteName: string = 'origin') => {
+    return gitGetRemoteUrl(vaultDir, remoteName)
+  })
+
+  ipcMain.handle('git:initialCommit', (_event, vaultDir: string, message: string) => {
+    return gitInitialCommit(vaultDir, message)
+  })
+
+  // Vault sync handlers
+  ipcMain.handle('sync:analyseStatus', async (_event, vaultDir: string) => {
+    return analyseSyncStatus(vaultDir)
+  })
+
+  ipcMain.handle('sync:execute', async (_event, vaultDir: string, resolutions?: Record<string, 'keep-local' | 'keep-remote' | 'conflict-note'>) => {
+    const result = await executeSync(vaultDir, resolutions)
+    if (result.success && mainWindow) {
+      mainWindow.webContents.send('vault:files-changed')
+    }
+    return result
+  })
+
+  // Window controls (for frameless window)
+  ipcMain.handle('window:minimize', () => {
+    mainWindow?.minimize()
+  })
+
+  ipcMain.handle('window:maximize', () => {
+    if (!mainWindow) return
+    mainWindow.isMaximized() ? mainWindow.unmaximize() : mainWindow.maximize()
+  })
+
+  ipcMain.handle('window:close', () => {
+    mainWindow?.close()
+  })
+
+  ipcMain.handle('window:isMaximized', () => {
+    return mainWindow?.isMaximized() ?? false
   })
 
   // Window title
@@ -181,6 +390,29 @@ function registerIpcHandlers() {
     if (mainWindow) {
       mainWindow.setTitle(title)
     }
+  })
+
+  // Native confirm dialog — avoids renderer confirm() which corrupts Electron focus state
+  ipcMain.handle('dialog:confirm', async (_event, message: string) => {
+    if (!mainWindow) return false
+    const result = await dialog.showMessageBox(mainWindow, {
+      type: 'question',
+      buttons: ['Cancel', 'Delete'],
+      defaultId: 1,
+      cancelId: 0,
+      message,
+    })
+    return result.response === 1
+  })
+
+  // Image handling
+  ipcMain.handle('vault:saveImage', (_event, vaultDir: string, imageData: ArrayBuffer, imageType: string) => {
+    const buffer = Buffer.from(imageData)
+    return saveImage(vaultDir, buffer, imageType)
+  })
+
+  ipcMain.handle('vault:convertBase64ImagesToFiles', (_event, vaultDir: string, noteId: string, markdown: string) => {
+    return convertBase64ImagesToFiles(vaultDir, noteId, markdown)
   })
 }
 

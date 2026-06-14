@@ -1,6 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import { execFile } from 'child_process'
+import crypto from 'crypto'
 
 export interface NoteFileData {
   name: string
@@ -61,8 +62,8 @@ export function buildFileTree(vaultDir: string): FileTreeNode[] {
     for (const entry of entries) {
       const fullPath = path.join(dir, entry.name)
 
-      // Skip hidden and system files/folders
-      if (entry.name.startsWith('.') || entry.name === 'node_modules' || entry.name === 'dist' || entry.name === 'dist-electron') {
+      // Skip hidden, system, and asset files/folders
+      if (entry.name.startsWith('.') || entry.name === 'node_modules' || entry.name === 'dist' || entry.name === 'dist-electron' || entry.name === 'assets') {
         continue
       }
 
@@ -76,14 +77,12 @@ export function buildFileTree(vaultDir: string): FileTreeNode[] {
         })
       } else if (entry.isDirectory()) {
         const children = walkDir(fullPath)
-        if (children.length > 0) {
-          nodes.push({
-            name: entry.name,
-            type: 'folder',
-            path: fullPath,
-            children,
-          })
-        }
+        nodes.push({
+          name: entry.name,
+          type: 'folder',
+          path: fullPath,
+          children,
+        })
       }
     }
 
@@ -96,6 +95,14 @@ export function buildFileTree(vaultDir: string): FileTreeNode[] {
   }
 
   return walkDir(vaultDir)
+}
+
+/**
+ * Compute SHA256 hash of a file's content
+ */
+export function contentHashFile(filePath: string): string {
+  const content = fs.readFileSync(filePath, 'utf-8')
+  return crypto.createHash('sha256').update(content).digest('hex')
 }
 
 /**
@@ -152,6 +159,13 @@ export function createFolder(folderPath: string): string {
     fs.mkdirSync(folderPath, { recursive: true })
   }
   return folderPath
+}
+
+/**
+ * Delete a folder and all its contents recursively
+ */
+export function deleteFolder(folderPath: string): void {
+  fs.rmSync(folderPath, { recursive: true, force: true })
 }
 
 /**
@@ -215,6 +229,35 @@ export function renameNote(vaultDir: string, oldPath: string, newName: string): 
   return { newPath, updatedCount }
 }
 
+// ── Copy operations ──
+
+/** Copy a file or folder into destFolder, auto-renaming on conflict. Returns new path. */
+export function copyItem(sourcePath: string, destFolder: string): string {
+  const basename = path.basename(sourcePath)
+  let destPath = path.join(destFolder, basename)
+
+  // Handle name conflicts by adding (copy), (copy 2), etc.
+  if (fs.existsSync(destPath)) {
+    const ext = path.extname(basename)
+    const nameNoExt = path.basename(basename, ext)
+    let i = 1
+    do {
+      const suffix = i === 1 ? ' (copy)' : ` (copy ${i})`
+      destPath = path.join(destFolder, `${nameNoExt}${suffix}${ext}`)
+      i++
+    } while (fs.existsSync(destPath))
+  }
+
+  const stat = fs.statSync(sourcePath)
+  if (stat.isDirectory()) {
+    fs.cpSync(sourcePath, destPath, { recursive: true })
+  } else {
+    fs.copyFileSync(sourcePath, destPath)
+  }
+
+  return destPath
+}
+
 // ── Git operations ──
 
 export function isGitRepo(vaultDir: string): Promise<boolean> {
@@ -228,21 +271,288 @@ export function isGitRepo(vaultDir: string): Promise<boolean> {
 export function gitStatus(vaultDir: string): Promise<string> {
   return new Promise((resolve, reject) => {
     execFile('git', ['status', '--porcelain'], { cwd: vaultDir }, (err, stdout) => {
-      if (err) reject(err)
-      else resolve(stdout)
+      if (err) {
+        console.error(`[gitStatus] Error:`, err)
+        reject(err)
+      } else {
+        console.log(`[gitStatus] Current status:\n${stdout || '(no changes)'}`)
+        resolve(stdout)
+      }
+    })
+  })
+}
+
+/**
+ * Check if there are unpulled commits from remote
+ */
+export function hasUnpulledCommits(vaultDir: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    // Fetch first to make sure we have latest remote refs
+    execFile('git', ['fetch', 'origin'], { cwd: vaultDir }, (errFetch) => {
+      if (errFetch) {
+        console.warn(`[hasUnpulledCommits] Fetch failed:`, errFetch.message)
+        return resolve(false)
+      }
+
+      // Get current branch
+      execFile('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: vaultDir }, (errBranch, currentBranch) => {
+        let branch = currentBranch.trim()
+        if (errBranch || branch === 'HEAD') {
+          console.warn(`[hasUnpulledCommits] Could not determine branch`)
+          return resolve(false)
+        }
+
+        // Check if local branch is behind remote
+        // git rev-list --count HEAD..origin/<branch> returns count of commits we're behind
+        execFile('git', ['rev-list', '--count', `HEAD..origin/${branch}`], { cwd: vaultDir }, (err, count) => {
+          if (err) {
+            console.warn(`[hasUnpulledCommits] Error checking commits:`, err.message)
+            return resolve(false)
+          }
+
+          const commitCount = parseInt(count.trim() || '0', 10)
+          console.log(`[hasUnpulledCommits] Found ${commitCount} unpulled commits`)
+          resolve(commitCount > 0)
+        })
+      })
     })
   })
 }
 
 export function gitSync(vaultDir: string, message: string): Promise<string> {
   return new Promise((resolve, reject) => {
-    execFile('git', ['add', '-A', '--', ':(glob)**/*.md'], { cwd: vaultDir }, (err) => {
-      if (err) return reject(err)
-      execFile('git', ['commit', '-m', message], { cwd: vaultDir }, (err2) => {
-        if (err2) return reject(err2)
-        execFile('git', ['push'], { cwd: vaultDir }, (err3) => {
-          if (err3) return reject(err3)
-          resolve('Synced successfully')
+    console.log(`[gitSync] ========== STARTING SYNC ==========`)
+    console.log(`[gitSync] Vault: ${vaultDir}`)
+    console.log(`[gitSync] Message: ${message}`)
+
+    execFile('git', ['add', '-A'], { cwd: vaultDir }, (err, stdout, stderr) => {
+      console.log(`[gitSync] git add -A completed`)
+      console.log(`[gitSync]   stdout: "${stdout}"`)
+      console.log(`[gitSync]   stderr: "${stderr}"`)
+      if (err) {
+        console.error(`[gitSync] Error in git add:`, err.message)
+        return reject(err)
+      }
+
+      console.log(`[gitSync] >>> Files staged, creating commit...`)
+
+      execFile('git', ['commit', '-m', message], { cwd: vaultDir }, (err2, stdout2, stderr2) => {
+        console.log(`[gitSync] git commit completed`)
+        console.log(`[gitSync]   stdout: "${stdout2}"`)
+        console.log(`[gitSync]   stderr: "${stderr2}"`)
+        if (err2) {
+          console.error(`[gitSync] Error in git commit:`, err2.message)
+          return reject(err2)
+        }
+
+        console.log(`[gitSync] >>> Commit created, fetching remote changes...`)
+
+        // First, fetch to get all remote refs
+        execFile('git', ['fetch', 'origin'], { cwd: vaultDir }, (errFetch, stdoutFetch, stderrFetch) => {
+          console.log(`[gitSync] git fetch origin completed`)
+          console.log(`[gitSync]   stdout: "${stdoutFetch}"`)
+          console.log(`[gitSync]   stderr: "${stderrFetch}"`)
+          if (errFetch) {
+            console.error(`[gitSync] Error in git fetch:`, errFetch.message)
+            return reject(errFetch)
+          }
+
+          console.log(`[gitSync] >>> Remote refs updated, checking branch state...`)
+
+          // Get current branch name - if detached, we need to attach to a proper branch
+          execFile('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: vaultDir }, (errBranch, currentBranch) => {
+            let branch = currentBranch.trim()
+            console.log(`[gitSync] Current branch/HEAD: ${branch}`)
+
+            // If detached HEAD, find and checkout a proper branch
+            if (branch === 'HEAD') {
+              console.log(`[gitSync] Detached HEAD state detected, finding a valid branch...`)
+
+              // Get list of remote branches to find a valid one to checkout
+              execFile('git', ['branch', '-r'], { cwd: vaultDir }, (errList, branchList) => {
+                console.log(`[gitSync] Remote branches:\n${branchList}`)
+
+                // Try to find master or main
+                let targetBranch = 'master'
+                if (branchList.includes('origin/main')) {
+                  targetBranch = 'main'
+                }
+
+                console.log(`[gitSync] Checking out ${targetBranch}...`)
+                execFile('git', ['checkout', '-B', targetBranch, `origin/${targetBranch}`], { cwd: vaultDir }, (errCheckout) => {
+                  if (errCheckout) {
+                    console.error(`[gitSync] Error checking out branch:`, errCheckout.message)
+                    return reject(errCheckout)
+                  }
+
+                  branch = targetBranch
+                  continueSync(branch)
+                })
+              })
+            } else {
+              continueSync(branch)
+            }
+
+            function continueSync(branch: string) {
+              console.log(`[gitSync] >>> Pulling remote changes on branch: ${branch}...`)
+
+              // Pull with explicit remote and branch reference (merge strategy, no rebase)
+              // Regular merge is simpler and avoids complex rebase conflicts
+              execFile('git', ['pull', 'origin', branch, '--allow-unrelated-histories', '-X', 'ours'], { cwd: vaultDir }, (err2b, stdout2b, stderr2b) => {
+                console.log(`[gitSync] git pull origin ${branch} completed`)
+                console.log(`[gitSync]   stdout: "${stdout2b}"`)
+                console.log(`[gitSync]   stderr: "${stderr2b}"`)
+                if (err2b) {
+                  console.warn(`[gitSync] Warning during pull:`, err2b.message)
+                  // Try to abort any in-progress rebase/merge
+                  execFile('git', ['rebase', '--abort'], { cwd: vaultDir }, () => {
+                    console.log(`[gitSync] Aborted any in-progress rebase`)
+                  })
+                  // Don't reject - we still have our commits locally
+                }
+
+                console.log(`[gitSync] >>> Remote changes integrated, pushing to remote...`)
+
+                // Push to current branch explicitly
+                execFile('git', ['push', '-u', 'origin', branch, '-v'], { cwd: vaultDir }, (err3, stdout3, stderr3) => {
+                  console.log(`[gitSync] git push -u origin ${branch} -v completed`)
+                  console.log(`[gitSync]   stdout: "${stdout3}"`)
+                  console.log(`[gitSync]   stderr: "${stderr3}"`)
+                  if (err3) {
+                    console.error(`[gitSync] Error in git push:`, err3.message)
+                    console.error(`[gitSync]   Full error:`, err3)
+                    return reject(err3)
+                  }
+
+                  console.log(`[gitSync] ========== SYNC SUCCESSFUL! ==========`)
+                  resolve('Synced successfully')
+                })
+              })
+            }
+          })
+        })
+      })
+    })
+  })
+}
+
+export function gitPull(vaultDir: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    console.log(`[gitPull] ========== STARTING PULL ==========`)
+    console.log(`[gitPull] Vault: ${vaultDir}`)
+
+    // First, fetch to get all remote refs
+    execFile('git', ['fetch', 'origin'], { cwd: vaultDir }, (errFetch, stdoutFetch, stderrFetch) => {
+      console.log(`[gitPull] git fetch origin completed`)
+      console.log(`[gitPull]   stdout: "${stdoutFetch}"`)
+      console.log(`[gitPull]   stderr: "${stderrFetch}"`)
+      if (errFetch) {
+        console.error(`[gitPull] Error in git fetch:`, errFetch.message)
+        return reject(errFetch)
+      }
+
+      console.log(`[gitPull] >>> Remote refs updated, checking branch state...`)
+
+      // Get current branch name - if detached, attach to proper branch
+      execFile('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: vaultDir }, (errBranch, currentBranch) => {
+        let branch = currentBranch.trim()
+        console.log(`[gitPull] Current branch/HEAD: ${branch}`)
+
+        if (branch === 'HEAD') {
+          console.log(`[gitPull] Detached HEAD state detected, finding a valid branch...`)
+          execFile('git', ['branch', '-r'], { cwd: vaultDir }, (errList, branchList) => {
+            console.log(`[gitPull] Remote branches:\n${branchList}`)
+            let targetBranch = 'master'
+            if (branchList.includes('origin/main')) {
+              targetBranch = 'main'
+            }
+            console.log(`[gitPull] Checking out ${targetBranch}...`)
+            execFile('git', ['checkout', '-B', targetBranch, `origin/${targetBranch}`], { cwd: vaultDir }, (errCheckout) => {
+              if (errCheckout) {
+                console.error(`[gitPull] Error checking out branch:`, errCheckout.message)
+                return reject(errCheckout)
+              }
+              branch = targetBranch
+              continuePull(branch)
+            })
+          })
+        } else {
+          continuePull(branch)
+        }
+
+        function continuePull(branch: string) {
+          console.log(`[gitPull] >>> Pulling remote changes on branch: ${branch}...`)
+          execFile('git', ['pull', 'origin', branch, '--allow-unrelated-histories', '-X', 'theirs'], { cwd: vaultDir }, (err, stdout, stderr) => {
+            console.log(`[gitPull] git pull origin ${branch} completed`)
+            console.log(`[gitPull]   stdout: "${stdout}"`)
+            console.log(`[gitPull]   stderr: "${stderr}"`)
+            if (err) {
+              console.warn(`[gitPull] Warning during pull:`, err.message)
+              execFile('git', ['rebase', '--abort'], { cwd: vaultDir }, () => {
+                console.log(`[gitPull] Aborted any in-progress rebase`)
+              })
+            }
+            console.log(`[gitPull] ========== PULL SUCCESSFUL! ==========`)
+            resolve('Pulled successfully')
+          })
+        }
+      })
+    })
+  })
+}
+
+export function gitPush(vaultDir: string, message: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    console.log(`[gitPush] ========== STARTING PUSH ==========`)
+    console.log(`[gitPush] Vault: ${vaultDir}`)
+    console.log(`[gitPush] Message: ${message}`)
+
+    // Stage all changes
+    execFile('git', ['add', '-A'], { cwd: vaultDir }, (err, stdout, stderr) => {
+      console.log(`[gitPush] git add -A completed`)
+      console.log(`[gitPush]   stdout: "${stdout}"`)
+      console.log(`[gitPush]   stderr: "${stderr}"`)
+      if (err) {
+        console.error(`[gitPush] Error in git add:`, err.message)
+        return reject(err)
+      }
+
+      console.log(`[gitPush] >>> Files staged, creating commit...`)
+
+      // Create commit
+      execFile('git', ['commit', '-m', message], { cwd: vaultDir }, (err2, stdout2, stderr2) => {
+        console.log(`[gitPush] git commit completed`)
+        console.log(`[gitPush]   stdout: "${stdout2}"`)
+        console.log(`[gitPush]   stderr: "${stderr2}"`)
+        if (err2) {
+          console.error(`[gitPush] Error in git commit:`, err2.message)
+          return reject(err2)
+        }
+
+        console.log(`[gitPush] >>> Commit created, pushing to remote...`)
+
+        // Get current branch
+        execFile('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: vaultDir }, (errBranch, currentBranch) => {
+          let branch = currentBranch.trim()
+          if (branch === 'HEAD') {
+            // Default to main if detached
+            branch = 'main'
+          }
+
+          console.log(`[gitPush] Pushing to branch: ${branch}...`)
+
+          // Push to remote
+          execFile('git', ['push', '-u', 'origin', branch, '-v'], { cwd: vaultDir }, (err3, stdout3, stderr3) => {
+            console.log(`[gitPush] git push -u origin ${branch} -v completed`)
+            console.log(`[gitPush]   stdout: "${stdout3}"`)
+            console.log(`[gitPush]   stderr: "${stderr3}"`)
+            if (err3) {
+              console.error(`[gitPush] Error in git push:`, err3.message)
+              return reject(err3)
+            }
+            console.log(`[gitPush] ========== PUSH SUCCESSFUL! ==========`)
+            resolve('Pushed successfully')
+          })
         })
       })
     })
@@ -256,4 +566,169 @@ export function gitLog(vaultDir: string, count: number = 10): Promise<string> {
       else resolve(stdout)
     })
   })
+}
+
+// Initialize a new git repository
+export function gitInit(vaultDir: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    console.log(`[gitInit] Initializing git repo at: ${vaultDir}`)
+    execFile('git', ['init'], { cwd: vaultDir }, (err, stdout) => {
+      if (err) {
+        console.error(`[gitInit] Error:`, err)
+        reject(err)
+      } else {
+        console.log(`[gitInit] Success:`, stdout)
+        resolve(stdout)
+      }
+    })
+  })
+}
+
+// Add a remote to the repository
+export function gitAddRemote(vaultDir: string, remoteName: string, remoteUrl: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    console.log(`[gitAddRemote] Adding remote "${remoteName}" to: ${vaultDir}`)
+    console.log(`[gitAddRemote] Remote URL: ${remoteUrl}`)
+    execFile('git', ['remote', 'add', remoteName, remoteUrl], { cwd: vaultDir }, (err) => {
+      if (err) {
+        console.error(`[gitAddRemote] Error:`, err)
+        reject(err)
+      } else {
+        console.log(`[gitAddRemote] Success`)
+        resolve('Remote added successfully')
+      }
+    })
+  })
+}
+
+// Get the remote URL
+export function gitGetRemoteUrl(vaultDir: string, remoteName: string = 'origin'): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile('git', ['config', '--get', `remote.${remoteName}.url`], { cwd: vaultDir }, (err, stdout) => {
+      if (err) reject(err)
+      else resolve(stdout.trim())
+    })
+  })
+}
+
+// Create initial commit with a message
+export function gitInitialCommit(vaultDir: string, message: string = 'Initial commit'): Promise<string> {
+  return new Promise((resolve, reject) => {
+    console.log(`[gitInitialCommit] Creating initial commit in: ${vaultDir}`)
+    console.log(`[gitInitialCommit] Message: ${message}`)
+
+    // First add all files
+    execFile('git', ['add', '-A'], { cwd: vaultDir }, (err1) => {
+      if (err1) {
+        console.error(`[gitInitialCommit] Error in git add:`, err1)
+        return reject(err1)
+      }
+
+      console.log(`[gitInitialCommit] Files staged, creating commit...`)
+
+      // Check if there's anything to commit
+      execFile('git', ['commit', '-m', message], { cwd: vaultDir }, (err2, stdout, stderr) => {
+        // If there's nothing to commit, that's fine
+        if (err2 && err2.message?.includes('nothing to commit')) {
+          console.log(`[gitInitialCommit] No files to commit`)
+          resolve('No files to commit')
+        } else if (err2) {
+          console.error(`[gitInitialCommit] Error in git commit:`, err2)
+          console.error(`[gitInitialCommit] stderr:`, stderr)
+          reject(err2)
+        } else {
+          console.log(`[gitInitialCommit] Commit created successfully`)
+          console.log(`[gitInitialCommit] stdout:`, stdout)
+          resolve('Initial commit created')
+        }
+      })
+    })
+  })
+}
+
+// ── Image handling ──
+
+/**
+ * Save a pasted image to the vault's .assets folder
+ * Returns the relative path for markdown image reference
+ */
+export function saveImage(vaultDir: string, imageBuffer: Buffer, imageType: string): string {
+  const assetsDir = path.join(vaultDir, 'assets')
+
+  // Create assets folder if it doesn't exist
+  if (!fs.existsSync(assetsDir)) {
+    fs.mkdirSync(assetsDir, { recursive: true })
+  }
+
+  // Generate a unique filename based on timestamp
+  const timestamp = Date.now()
+  const extension = imageType === 'image/png' ? 'png' : imageType === 'image/jpeg' ? 'jpg' : 'webp'
+  const filename = `image-${timestamp}.${extension}`
+  const filepath = path.join(assetsDir, filename)
+
+  // Save the image file
+  fs.writeFileSync(filepath, imageBuffer)
+
+  console.log(`[saveImage] Saved image to: ${filepath}`)
+
+  // Return relative path for markdown reference
+  // Use forward slashes for cross-platform compatibility in markdown
+  // GitHub and Milkdown both support ./assets/ format
+  return `./assets/${filename}`
+}
+
+/**
+ * Find base64-encoded images in markdown and convert them to files
+ * Replaces data URLs with file references
+ * Uses content hash to avoid re-saving the same image multiple times
+ */
+export async function convertBase64ImagesToFiles(vaultDir: string, noteId: string, markdown: string): Promise<string> {
+  // Regex to find markdown image syntax with data URLs
+  const base64ImageRegex = /!\[\]\(data:image\/(\w+);base64,([A-Za-z0-9+/=]+)\)/g
+
+  let updatedMarkdown = markdown
+  const assetsDir = path.join(vaultDir, 'assets')
+
+  // Create assets folder if it doesn't exist
+  if (!fs.existsSync(assetsDir)) {
+    fs.mkdirSync(assetsDir, { recursive: true })
+  }
+
+  // Process each base64 image
+  const matches = Array.from(markdown.matchAll(base64ImageRegex))
+  for (const match of matches) {
+    const imageType = match[1] // png, jpeg, webp, etc.
+    const base64Data = match[2]
+    const fullMatch = match[0]
+
+    try {
+      // Create a hash of the base64 data to use as filename
+      // This ensures the same image always produces the same file
+      const crypto = require('crypto')
+      const hash = crypto.createHash('md5').update(base64Data).digest('hex').substring(0, 8)
+
+      const extension = imageType === 'jpeg' ? 'jpg' : imageType
+      const filename = `image-${hash}.${extension}`
+      const filepath = path.join(assetsDir, filename)
+
+      // Only save if the file doesn't already exist
+      if (!fs.existsSync(filepath)) {
+        // Convert base64 to buffer
+        const buffer = Buffer.from(base64Data, 'base64')
+        fs.writeFileSync(filepath, buffer)
+        console.log(`[convertBase64ImagesToFiles] Saved image to ${filepath}`)
+      } else {
+        console.log(`[convertBase64ImagesToFiles] Image already exists, skipping: ${filepath}`)
+      }
+
+      // Replace the base64 URL with file reference
+      const imagePath = `./assets/${filename}`
+      updatedMarkdown = updatedMarkdown.replace(fullMatch, `![](${imagePath})`)
+    } catch (error) {
+      console.error(`[convertBase64ImagesToFiles] Failed to convert image:`, error)
+      // Keep original if conversion fails
+    }
+  }
+
+  return updatedMarkdown
 }
